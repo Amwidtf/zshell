@@ -2,23 +2,27 @@ import React, {useEffect, useState} from 'react';
 import {
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {
-  createLockConfig,
-  disabledConfig,
+  activeSecrets,
+  clearMethod,
   LockConfig,
-  LockMethod,
   patternToString,
+  setPassword,
+  setPattern,
+  setBiometric,
   verifySecret,
 } from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {PatternPad} from '../PatternPad';
+import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
 
@@ -37,47 +41,77 @@ interface SettingsScreenProps {
   onBack: () => void;
 }
 
-type SetupStep =
-  | {kind: 'choose'}
-  | {kind: 'pattern'; confirmOf: string | null; method: LockMethod}
-  | {kind: 'password'; first: string | null; method: LockMethod}
-  | {kind: 'disableVerify'};
+type Step =
+  | {kind: 'idle'}
+  | {kind: 'patternSet'; confirmOf: string | null}
+  | {kind: 'passwordSet'; first: string | null}
+  | {kind: 'verify'; title: string; action: () => void};
 
+/** Multi-method lock management: each method is set/cleared independently. */
 export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) {
-  const [biometricType, setBiometricType] = useState<string | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [step, setStep] = useState<SetupStep>({kind: 'choose'});
-  const [password, setPassword] = useState('');
+  const [biometricType, setBiometricType] = useState<string | undefined>();
+  const [step, setStep] = useState<Step>({kind: 'idle'});
+  const [password, setPasswordValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
 
   useEffect(() => {
     biometricAuth.isAvailable().then(r => {
       setBiometricAvailable(r.available);
-      setBiometricType(r.type ?? null);
+      setBiometricType(r.type);
     });
   }, []);
 
-  const finishSetup = (method: LockMethod, secret: string) => {
-    onSaveLock(createLockConfig(method, secret, rng()));
-    setStep({kind: 'choose'});
+  const secrets = activeSecrets(lock);
+  const onlyBiometric = lock.methods.biometric && secrets.length === 0;
+  const enabledNames = [
+    lock.methods.biometric ? biometricLabel(biometricType) : null,
+    lock.methods.pattern != null ? '图案' : null,
+    lock.methods.password != null ? '密码' : null,
+  ].filter(n => n != null);
+
+  /** Clearing a secret method requires proving identity first. */
+  const requestVerify = (title: string, action: () => void) => {
+    setPasswordValue('');
+    setError(null);
+    setStep({kind: 'verify', title, action});
+  };
+
+  const runBiometricVerify = async (action: () => void) => {
+    const ok = await biometricAuth.prompt(titleFor('verify-biometric'));
+    if (ok) {
+      action();
+      setStep({kind: 'idle'});
+    } else {
+      setError('验证未通过');
+    }
+  };
+
+  const titleFor = (kind: string) =>
+    kind === 'verify-biometric' ? '验证以继续' : '验证身份';
+
+  const verifyBySecret = (kind: 'pattern' | 'password', secret: string, action: () => void) => {
+    if (verifySecret(secret, kind, lock)) {
+      action();
+      setStep({kind: 'idle'});
+      setError(null);
+    } else {
+      setError('验证失败');
+    }
+  };
+
+  const finishPatternSet = (secret: string) => {
+    onSaveLock(setPattern(lock, secret, rng()));
+    setStep({kind: 'idle'});
     setError(null);
   };
 
-  const tryDisable = async (secret: string) => {
-    if (verifySecret(secret, lock)) {
-      onSaveLock(disabledConfig());
-      setStep({kind: 'choose'});
-      setError(null);
-      return;
-    }
-    if (lock.method === 'biometric' && (await biometricAuth.prompt('验证以关闭应用锁'))) {
-      onSaveLock(disabledConfig());
-      setStep({kind: 'choose'});
-      setError(null);
-      return;
-    }
-    setError('验证失败');
+  const finishPasswordSet = (secret: string) => {
+    onSaveLock(setPassword(lock, secret, rng()));
+    setStep({kind: 'idle'});
+    setError(null);
+    setPasswordValue('');
   };
 
   return (
@@ -91,57 +125,109 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
         <Text style={styles.sectionTitle}>应用锁</Text>
         <Text style={font.dim}>
           {lock.enabled
-            ? `已启用 · ${
-                lock.method === 'biometric'
-                  ? `生物识别${biometricType ? `（${biometricType === 'TouchID' ? '指纹' : biometricType === 'FaceID' ? '人脸' : biometricType}）` : ''} + 图案备用`
-                  : lock.method === 'pattern'
-                    ? '图案解锁'
-                    : '密码解锁'
-              }`
-            : '未启用 —— 打开应用时验证指纹、人脸、图案或密码，保护已保存的配对凭据'}
+            ? `已启用：${enabledNames.join(' + ')}（任一方式均可解锁）`
+            : '未启用 —— 可同时开启多种解锁方式，防止单一方式不可用时被锁在外'}
         </Text>
-
-        {step.kind === 'choose' ? (
-          <View style={{gap: 10, marginTop: 6}}>
-            {lock.enabled ? (
-              <TouchableOpacity
-                style={styles.dangerOutline}
-                onPress={() => {
-                  setStep({kind: 'disableVerify'});
-                  setError(null);
-                }}>
-                <Text style={{color: colors.danger, fontSize: 14}}>关闭应用锁</Text>
-              </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={styles.option}
-                  disabled={!biometricAvailable}
-                  onPress={() => setStep({kind: 'pattern', confirmOf: null, method: 'biometric'})}>
-                  <Text style={styles.optionText}>
-                    指纹 / 人脸{biometricAvailable ? '' : '（本机不可用）'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.option}
-                  onPress={() => setStep({kind: 'pattern', confirmOf: null, method: 'pattern'})}>
-                  <Text style={styles.optionText}>图案</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.option}
-                  onPress={() => setStep({kind: 'password', first: null, method: 'password'})}>
-                  <Text style={styles.optionText}>密码</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+        {onlyBiometric ? (
+          <Text style={styles.hintWarn}>
+            当前仅启用生物识别，建议再设置图案或密码作为备用
+          </Text>
         ) : null}
 
-        {step.kind === 'pattern' ? (
+        {/* ---- biometric toggle ---- */}
+        <View style={styles.methodRow}>
+          <View style={{flex: 1}}>
+            <Text style={font.body}>{biometricLabel(biometricType)}</Text>
+            <Text style={font.faint}>
+              {biometricAvailable
+                ? '使用系统指纹 / 人脸验证'
+                : '本机暂无可用生物识别（容器/模拟器通常不支持，需实体设备已录入）'}
+            </Text>
+          </View>
+          <Switch
+            value={lock.methods.biometric}
+            disabled={!biometricAvailable && !lock.methods.biometric}
+            onValueChange={on => {
+              setError(null);
+              onSaveLock(setBiometric(lock, on));
+            }}
+            trackColor={{true: colors.accent}}
+            thumbColor="#ffffff"
+          />
+        </View>
+
+        {/* ---- pattern row ---- */}
+        <View style={styles.methodRow}>
+          <View style={{flex: 1}}>
+            <Text style={font.body}>图案</Text>
+            <Text style={font.faint}>
+              {lock.methods.pattern != null ? '已设置' : '未设置'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.smallButton}
+            onPress={() => {
+              setError(null);
+              setStep({kind: 'patternSet', confirmOf: null});
+            }}>
+            <Text style={styles.smallButtonText}>
+              {lock.methods.pattern != null ? '更换' : '设置'}
+            </Text>
+          </TouchableOpacity>
+          {lock.methods.pattern != null ? (
+            <TouchableOpacity
+              style={styles.smallButton}
+              onPress={() =>
+                requestVerify('清除图案', () =>
+                  onSaveLock(clearMethod(lock, 'pattern')),
+                )
+              }>
+              <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+                清除
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* ---- password row ---- */}
+        <View style={styles.methodRow}>
+          <View style={{flex: 1}}>
+            <Text style={font.body}>密码</Text>
+            <Text style={font.faint}>
+              {lock.methods.password != null ? '已设置' : '未设置'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.smallButton}
+            onPress={() => {
+              setError(null);
+              setPasswordValue('');
+              setStep({kind: 'passwordSet', first: null});
+            }}>
+            <Text style={styles.smallButtonText}>
+              {lock.methods.password != null ? '更换' : '设置'}
+            </Text>
+          </TouchableOpacity>
+          {lock.methods.password != null ? (
+            <TouchableOpacity
+              style={styles.smallButton}
+              onPress={() =>
+                requestVerify('清除密码', () =>
+                  onSaveLock(clearMethod(lock, 'password')),
+                )
+              }>
+              <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+                清除
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* ---- flows ---- */}
+        {step.kind === 'patternSet' ? (
           <View style={{alignItems: 'center', marginTop: 10}}>
             <Text style={font.dim}>
-              {step.method === 'biometric' ? '设置备用图案（生物识别不可用时使用）' : '设置解锁图案'}
-              {step.confirmOf != null ? ' · 请再画一次确认' : ''}
+              {step.confirmOf == null ? '设置解锁图案' : '请再画一次确认'}
             </Text>
             <View style={{marginTop: 30, marginBottom: 40}}>
               <PatternPad
@@ -151,7 +237,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
                   if (step.confirmOf == null) {
                     setStep({...step, confirmOf: secret});
                   } else if (step.confirmOf === secret) {
-                    finishSetup(step.method, secret);
+                    finishPatternSet(secret);
                   } else {
                     setError('两次图案不一致，请重新设置');
                     setStep({...step, confirmOf: null});
@@ -162,10 +248,10 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
           </View>
         ) : null}
 
-        {step.kind === 'password' ? (
+        {step.kind === 'passwordSet' ? (
           <View style={{gap: 10}}>
             <Text style={font.dim}>
-              {step.first == null ? '设置解锁密码' : '请再输入一次确认'}
+              {step.first == null ? '设置解锁密码（至少 4 位）' : '请再输入一次确认'}
             </Text>
             <TextInput
               style={styles.input}
@@ -173,7 +259,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
               placeholderTextColor={colors.textFaint}
               secureTextEntry
               value={password}
-              onChangeText={setPassword}
+              onChangeText={setPasswordValue}
             />
             <TouchableOpacity
               style={styles.primaryButton}
@@ -184,14 +270,14 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
                 }
                 if (step.first == null) {
                   setStep({...step, first: password});
-                  setPassword('');
+                  setPasswordValue('');
                   setError(null);
                 } else if (step.first === password) {
-                  finishSetup('password', password);
+                  finishPasswordSet(password);
                 } else {
                   setError('两次密码不一致');
                   setStep({...step, first: null});
-                  setPassword('');
+                  setPasswordValue('');
                 }
               }}>
               <Text style={{color: '#fff', fontWeight: '600'}}>下一步</Text>
@@ -200,17 +286,33 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
           </View>
         ) : null}
 
-        {step.kind === 'disableVerify' ? (
+        {step.kind === 'verify' ? (
           <View style={{gap: 10}}>
-            <Text style={font.dim}>验证当前锁以关闭：</Text>
-            {lock.secretKind === 'pattern' ? (
+            <Text style={font.dim}>{step.title}（可用任意已启用的方式）</Text>
+            {lock.methods.biometric && biometricAvailable ? (
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => runBiometricVerify(step.action)}>
+                <Text style={{color: '#fff', fontWeight: '600'}}>
+                  使用{biometricLabel(biometricType)}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            {lock.methods.pattern != null ? (
               <View style={{alignItems: 'center', marginVertical: 10}}>
                 <PatternPad
                   hint={error ?? '绘制当前图案'}
-                  onComplete={dots => tryDisable(patternToString(dots))}
+                  onComplete={dots =>
+                    verifyBySecret(
+                      'pattern',
+                      patternToString(dots),
+                      step.action,
+                    )
+                  }
                 />
               </View>
-            ) : (
+            ) : null}
+            {lock.methods.password != null ? (
               <>
                 <TextInput
                   style={styles.input}
@@ -218,15 +320,15 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
                   placeholderTextColor={colors.textFaint}
                   secureTextEntry
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={setPasswordValue}
                 />
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={() => tryDisable(password)}>
-                  <Text style={{color: '#fff', fontWeight: '600'}}>验证并关闭</Text>
+                  onPress={() => verifyBySecret('password', password, step.action)}>
+                  <Text style={{color: '#fff', fontWeight: '600'}}>验证</Text>
                 </TouchableOpacity>
               </>
-            )}
+            ) : null}
             {error != null ? <Text style={styles.errorText}>{error}</Text> : null}
           </View>
         ) : null}
@@ -268,20 +370,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: {color: colors.text, fontSize: 16, fontWeight: '600'},
-  option: {
+  methodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 6,
+  },
+  smallButton: {
     backgroundColor: colors.bgInput,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  optionText: {color: colors.accent, fontSize: 15},
-  dangerOutline: {
-    borderWidth: 1,
-    borderColor: 'rgba(229,83,75,0.5)',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
+  smallButtonText: {color: colors.textDim, fontSize: 13},
+  hintWarn: {color: colors.star, fontSize: 12},
   input: {
     backgroundColor: colors.bgInput,
     borderRadius: 10,
@@ -296,6 +398,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
   },
+  errorText: {color: colors.danger, fontSize: 13},
   legalRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,5 +410,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   legalRowText: {color: colors.accent, fontSize: 15},
-  errorText: {color: colors.danger, fontSize: 13},
 });

@@ -15,7 +15,7 @@ ZShell puts the ZCode desktop remote-control console on your phone: pair by scan
 - **Three pairing entries**: camera scan / paste pairing URL / recognize a QR screenshot from the gallery (pure JS decoding, zero extra native deps)
 - **Machine management**: custom naming, favorites pinned on top, manual ordering; re-pairing the same desktop merges records and rotates credentials
 - **Encrypted storage**: pairing credentials (`sid` + `hash`) stored AES-encrypted, keys held by Android Keystore, never in plaintext
-- **App lock**: fingerprint / face (system biometrics with dynamic availability detection), pattern, or password; PBKDF2 local verification; auto-relock on backgrounding
+- **App lock**: fingerprint / face (system biometrics with dynamic availability detection), pattern, and password **can all be enabled at once** — any one of them unlocks, so a single unavailable method never locks you out; PBKDF2 local verification; auto-relock on backgrounding
 - **Behavior patch layer**: document-start injection with self-retiring probes — e.g. fixes the "Enter submits instead of newline" issue on some mobile browsers
 - **Compliance built-in**: first-launch consent gate for the user agreement & privacy policy; in-app legal document center; zero data collection
 - **UX details**: system back prefers in-page history; edge-to-edge adaptation; keyboard lifts input fields

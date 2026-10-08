@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import {
+  activeSecrets,
   LockConfig,
   patternToString,
   verifySecret,
@@ -18,28 +19,63 @@ import {biometricAuth} from '../biometric';
 import {PatternPad} from '../PatternPad';
 import {colors, font} from '../theme';
 
+type SecretKind = 'pattern' | 'password';
+type Mode = SecretKind | 'biometric-failed';
+
 interface LockScreenProps {
   config: LockConfig;
   onUnlock: () => void;
 }
 
+/** Resolve a user-facing biometric name from the platform-reported type. */
+export function biometricLabel(type?: string): string {
+  if (type === 'FaceID') {
+    return '人脸';
+  }
+  if (type === 'TouchID') {
+    return '指纹';
+  }
+  return '生物识别';
+}
+
+/**
+ * Unlock screen. Every enabled method is offered — biometric prompt plus
+ * pattern/password inputs with switching — so one unavailable method never
+ * locks the user out.
+ */
 export function LockScreen({config, onUnlock}: LockScreenProps) {
+  const secrets = activeSecrets(config);
+  const [mode, setMode] = useState<Mode>(
+    secrets[0] ?? 'biometric-failed',
+  );
+  const [secretInput, setSecretInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
-  const [secretInput, setSecretInput] = useState('');
-  const [showFallback, setShowFallback] = useState(config.method !== 'biometric');
+  const [bioType, setBioType] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (config.method !== 'biometric') {
+    if (!config.methods.biometric) {
       return;
     }
     let cancelled = false;
-    biometricAuth.prompt('验证身份以打开 ZShell').then(ok => {
-      if (!cancelled && ok) {
-        onUnlock();
-      } else if (!cancelled) {
-        setShowFallback(true);
+    biometricAuth.isAvailable().then(r => {
+      if (cancelled) {
+        return;
       }
+      setBioType(r.type);
+      if (!r.available) {
+        setError(
+          `${biometricLabel(r.type)}不可用，请使用备用方式解锁`,
+        );
+        return;
+      }
+      biometricAuth.prompt('验证身份以打开 ZShell').then(ok => {
+        if (!cancelled && ok) {
+          onUnlock();
+        } else if (!cancelled) {
+          setError(`${biometricLabel(r.type)}验证未通过，请使用备用方式`);
+        }
+      });
     });
     return () => {
       cancelled = true;
@@ -47,17 +83,19 @@ export function LockScreen({config, onUnlock}: LockScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fail = (msg: string) => {
-    setError(msg);
-    setAttempts(a => a + 1);
-  };
-
-  const trySecret = (secret: string) => {
-    if (verifySecret(secret, config)) {
+  const trySecret = (kind: SecretKind, secret: string) => {
+    if (verifySecret(secret, kind, config)) {
       onUnlock();
     } else {
-      fail('验证失败，请重试');
+      setError('验证失败，请重试');
+      setAttempts(a => a + 1);
     }
+  };
+
+  const switchTo = (kind: SecretKind) => {
+    setMode(kind);
+    setError(null);
+    setSecretInput('');
   };
 
   return (
@@ -67,21 +105,23 @@ export function LockScreen({config, onUnlock}: LockScreenProps) {
       keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>ZShell 已锁定</Text>
       <Text style={font.dim}>
-        {config.method === 'biometric'
-          ? '生物识别不可用或已取消'
-          : config.secretKind === 'pattern'
+        {mode === 'biometric-failed'
+          ? '请选择解锁方式'
+          : mode === 'pattern'
             ? '绘制图案解锁'
             : '输入密码解锁'}
       </Text>
 
-      {config.secretKind === 'pattern' && showFallback ? (
+      {mode === 'pattern' ? (
         <View style={{marginTop: 40, alignItems: 'center'}}>
           <PatternPad
             hint={error ?? '至少连接 4 个点'}
-            onComplete={dots => trySecret(patternToString(dots))}
+            onComplete={dots => trySecret('pattern', patternToString(dots))}
           />
         </View>
-      ) : showFallback ? (
+      ) : null}
+
+      {mode === 'password' ? (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{width: '100%', marginTop: 40}}>
@@ -90,32 +130,64 @@ export function LockScreen({config, onUnlock}: LockScreenProps) {
             placeholder="密码"
             placeholderTextColor={colors.textFaint}
             secureTextEntry
+            autoFocus
             value={secretInput}
             onChangeText={setSecretInput}
-            onSubmitEditing={() => trySecret(secretInput)}
+            onSubmitEditing={() => trySecret('password', secretInput)}
           />
           <TouchableOpacity
             style={styles.button}
-            onPress={() => trySecret(secretInput)}>
+            onPress={() => trySecret('password', secretInput)}>
             <Text style={styles.buttonText}>解锁</Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>
       ) : null}
 
-      {config.method === 'biometric' ? (
-        <TouchableOpacity
-          style={styles.secondary}
-          onPress={async () => {
-            const ok = await biometricAuth.prompt('验证身份以打开 ZShell');
-            if (ok) {
-              onUnlock();
-            } else {
-              setShowFallback(true);
-            }
-          }}>
-          <Text style={styles.secondaryText}>重试指纹 / 人脸</Text>
-        </TouchableOpacity>
+      {mode === 'biometric-failed' ? (
+        <View style={{marginTop: 40, gap: 16, alignItems: 'center'}}>
+          {secrets.length === 0 ? (
+            <Text style={styles.error}>
+              未设置备用解锁方式。请重启应用并重试
+              {config.methods.biometric ? biometricLabel(bioType) : ''}验证。
+            </Text>
+          ) : null}
+        </View>
       ) : null}
+
+      {/* Method switcher: any other enabled method is one tap away. */}
+      <View style={styles.switchRow}>
+        {config.methods.biometric ? (
+          <TouchableOpacity
+            style={styles.switchButton}
+            onPress={async () => {
+              setError(null);
+              const ok = await biometricAuth.prompt('验证身份以打开 ZShell');
+              if (ok) {
+                onUnlock();
+              } else {
+                setError(`${biometricLabel(bioType)}验证未通过`);
+              }
+            }}>
+            <Text style={styles.switchText}>
+              使用{biometricLabel(bioType)}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+        {secrets.includes('pattern') && mode !== 'pattern' ? (
+          <TouchableOpacity
+            style={styles.switchButton}
+            onPress={() => switchTo('pattern')}>
+            <Text style={styles.switchText}>使用图案</Text>
+          </TouchableOpacity>
+        ) : null}
+        {secrets.includes('password') && mode !== 'password' ? (
+          <TouchableOpacity
+            style={styles.switchButton}
+            onPress={() => switchTo('password')}>
+            <Text style={styles.switchText}>使用密码</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       {attempts > 0 ? (
         <Text style={styles.error}>已尝试 {attempts} 次</Text>
@@ -146,7 +218,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   buttonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
-  secondary: {marginTop: 32},
-  secondaryText: {color: colors.accent, fontSize: 14},
-  error: {color: colors.danger, marginTop: 16, fontSize: 13},
+  switchRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 36,
+  },
+  switchButton: {padding: 6},
+  switchText: {color: colors.accent, fontSize: 14},
+  error: {color: colors.danger, marginTop: 16, fontSize: 13, textAlign: 'center'},
 });
