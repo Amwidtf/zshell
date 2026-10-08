@@ -2,6 +2,7 @@ import {MMKVLoader} from 'react-native-mmkv-storage';
 import {
   deserializeLockConfig,
   disabledConfig,
+  LegalConsent,
   LockConfig,
   MachineRegistry,
   SecureKvStore,
@@ -50,4 +51,20 @@ export function loadLockConfig(): LockConfig {
 
 export function saveLockConfig(config: LockConfig): void {
   secureStore.set(STORAGE_KEYS.lock, serializeLockConfig(config));
+}
+
+export function loadLegalConsent(): LegalConsent | null {
+  const raw = secureStore.getString(STORAGE_KEYS.legal);
+  if (raw == null) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as LegalConsent;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLegalConsent(consent: LegalConsent): void {
+  secureStore.set(STORAGE_KEYS.legal, JSON.stringify(consent));
 }

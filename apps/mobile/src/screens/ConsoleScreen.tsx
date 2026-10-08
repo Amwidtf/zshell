@@ -1,11 +1,11 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import {WebView} from 'react-native-webview';
+import {WebView, WebViewNavigation} from 'react-native-webview';
 import {buildConsoleUrl, MachineRecord} from '@zshell/core-shell';
 import {buildPatchSource} from '@zshell/patch-bundle';
 import {colors, font} from '../theme';
@@ -13,6 +13,12 @@ import {colors, font} from '../theme';
 interface ConsoleScreenProps {
   machine: MachineRecord;
   onBack: () => void;
+  /**
+   * Registers a web-history back handler. The system back button prefers
+   * the page's own history (e.g. navigating inside the console); when there
+   * is none it falls through to the app-level back (return to machine list).
+   */
+  registerBackHandler: (fn: (() => boolean) | null) => void;
 }
 
 /**
@@ -20,16 +26,30 @@ interface ConsoleScreenProps {
  * (matchMedia fix etc.) is injected before any page script runs; everything
  * else — relay WSS, pairing handshake — is done by the official page itself.
  */
-export function ConsoleScreen({machine, onBack}: ConsoleScreenProps) {
+export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScreenProps) {
   const webviewRef = useRef<WebView>(null);
+  const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
   const url = useMemo(() => buildConsoleUrl(machine.credentials), [machine]);
+
+  const handleWebBack = useCallback(() => {
+    if (canGoBackRef.current && webviewRef.current != null) {
+      webviewRef.current.goBack();
+      return true;
+    }
+    return false;
+  }, []);
+
+  useEffect(() => {
+    registerBackHandler(handleWebBack);
+    return () => registerBackHandler(null);
+  }, [handleWebBack, registerBackHandler]);
 
   return (
     <View style={styles.root}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>‹ 返回</Text>
+          <Text style={styles.backText}>‹ 返回列表</Text>
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>
           {machine.name}
@@ -52,6 +72,9 @@ export function ConsoleScreen({machine, onBack}: ConsoleScreenProps) {
         style={styles.webview}
         containerStyle={styles.webview}
         setSupportMultipleWindows={false}
+        onNavigationStateChange={(nav: WebViewNavigation) => {
+          canGoBackRef.current = nav.canGoBack;
+        }}
         renderError={code => (
           <View style={styles.errorBox}>
             <Text style={font.dim}>页面加载失败（{code}）</Text>
@@ -79,7 +102,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {paddingHorizontal: 10, paddingVertical: 8},
-  backText: {color: colors.accent, fontSize: 16},
+  backText: {color: colors.accent, fontSize: 15},
   title: {...font.body, flex: 1, textAlign: 'center'},
   reloadButton: {paddingHorizontal: 12, paddingVertical: 8},
   reloadText: {color: colors.accent, fontSize: 14},

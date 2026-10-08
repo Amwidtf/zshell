@@ -16,6 +16,8 @@ import {
   verifySecret,
 } from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
+import {LegalDocModal} from '../components/LegalDocModal';
+import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {PatternPad} from '../PatternPad';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
@@ -47,6 +49,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
   const [step, setStep] = useState<SetupStep>({kind: 'choose'});
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
 
   useEffect(() => {
     biometricAuth.isAvailable().then(r => {
@@ -230,14 +233,28 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>关于</Text>
+        <Text style={styles.sectionTitle}>法律与关于</Text>
         <Text style={font.faint}>
-          ZShell v{APP_VERSION} · 非官方第三方客户端{'\n'}
-          配对凭据使用设备加密存储（AES，密钥在 Android Keystore）{'\n'}
-          行为补丁层仅修正官方页面已知缺陷{'\n'}
-          零数据收集 —— 全部数据仅存于本机
+          ZShell v{APP_VERSION} · 非官方第三方客户端 · 零数据收集
         </Text>
+        {(
+          [
+            USER_AGREEMENT,
+            PRIVACY_POLICY,
+            OSS_LICENSES,
+          ] as LegalDoc[]
+        ).map(doc => (
+          <TouchableOpacity
+            key={doc.title}
+            style={styles.legalRow}
+            onPress={() => setOpenDoc(doc)}>
+            <Text style={styles.legalRowText}>{doc.title}</Text>
+            <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
+          </TouchableOpacity>
+        ))}
       </View>
+
+      <LegalDocModal doc={openDoc} onClose={() => setOpenDoc(null)} />
     </ScrollView>
   );
 }
@@ -279,5 +296,16 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
   },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.bgInput,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 4,
+  },
+  legalRowText: {color: colors.accent, fontSize: 15},
   errorText: {color: colors.danger, fontSize: 13},
 });

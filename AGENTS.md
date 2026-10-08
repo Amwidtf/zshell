@@ -8,6 +8,8 @@
 - `packages/patch-bundle` — 注入官方页面的行为补丁 JS（导出为字符串）。
 - `apps/mobile` — React Native 0.82 应用（Android 先行，规划 RNOH 鸿蒙 / iOS）。
 - `patches/` — npm `patchedDependencies` 补丁（勿删）。
+- `docs/` — 项目文档（架构 / 构建 / 发版 / 合规 + 法律文本）。
+- `CHANGELOG.md` — 更新日志，Release 说明的数据源。
 - `.tmp/` — **私有调研区，永不提交**（已被 .gitignore 排除）。
 
 ## 常用命令
@@ -58,5 +60,8 @@ adb -s 127.0.0.1:16512 shell am start -n com.zshell/.MainActivity
 - [ ] `npx vitest run` 全绿
 - [ ] `./gradlew assembleDebug`（以及需要的 release 变体）成功
 - [ ] 版本号三处同步：根 `package.json`、`apps/mobile/package.json`、`android/app/build.gradle`（versionName/versionCode）、`src/version.ts`
-- [ ] 免责声明 / 隐私政策内容仍与实际行为一致（PRIVACY.md 中的权限与第三方清单）
+- [ ] 免责声明 / 隐私政策内容仍与实际行为一致（docs/PRIVACY.md 中的权限与第三方清单），
+      且与 `apps/mobile/src/legal.ts`（应用内展示版）同步；实质性变更时提升
+      `LEGAL_DOC_VERSION` 触发重新征求同意
+- [ ] CHANGELOG.md 已添加对应版本段落（CI 发版说明自动取自该段落）
 - [ ] MuMu 或真机冒烟：配对 → 控制台 → 收藏 → 锁屏

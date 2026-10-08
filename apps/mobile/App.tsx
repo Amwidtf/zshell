@@ -12,12 +12,14 @@ import {
   MachineRegistry,
 } from '@zshell/core-shell';
 import {ConsoleScreen} from './src/screens/ConsoleScreen';
+import {ConsentGate} from './src/screens/ConsentGate';
 import {LockScreen} from './src/screens/LockScreen';
 import {MachineListScreen} from './src/screens/MachineListScreen';
 import {ManualInputScreen} from './src/screens/ManualInputScreen';
 import {ScanScreen} from './src/screens/ScanScreen';
 import {SettingsScreen} from './src/screens/SettingsScreen';
-import {loadLockConfig, loadRegistry, saveLockConfig, saveRegistry} from './src/storage';
+import {loadLegalConsent, loadLockConfig, loadRegistry, saveLegalConsent, saveLockConfig, saveRegistry} from './src/storage';
+import {LEGAL_DOC_VERSION} from './src/legal';
 
 type Screen =
   | {name: 'list'}
@@ -28,11 +30,17 @@ type Screen =
 
 function App(): React.JSX.Element {
   const [booting, setBooting] = useState(true);
+  const [consented, setConsented] = useState(true);
   const [lock, setLock] = useState(disabledConfig());
   const [unlocked, setUnlocked] = useState(true);
   const [stack, setStack] = useState<Screen[]>([{name: 'list'}]);
   const [machines, setMachines] = useState<MachineRecord[]>([]);
   const registryRef = useRef<MachineRegistry | null>(null);
+  // Set by the console screen: prefers the web page's own history on back.
+  const webBackRef = useRef<(() => boolean) | null>(null);
+  const registerConsoleBack = useCallback((fn: (() => boolean) | null) => {
+    webBackRef.current = fn;
+  }, []);
 
   useEffect(() => {
     registryRef.current = loadRegistry();
@@ -40,6 +48,8 @@ function App(): React.JSX.Element {
     setLock(cfg);
     setUnlocked(!cfg.enabled);
     setMachines(registryRef.current.sorted());
+    const consent = loadLegalConsent();
+    setConsented(consent != null && consent.version >= LEGAL_DOC_VERSION);
     setBooting(false);
   }, []);
 
@@ -53,10 +63,16 @@ function App(): React.JSX.Element {
     return () => sub.remove();
   }, [lock.enabled]);
 
-  // System back button pops our screen stack instead of exiting the app;
-  // at the root screen we fall through to the default (exit) behavior.
+  // System back button: inside the console, prefer the page's own history
+  // (web back), then pop our screen stack; at the root screen fall through
+  // to the default (exit) behavior.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (stack.length > 0 && stack[stack.length - 1].name === 'console') {
+        if (webBackRef.current != null && webBackRef.current()) {
+          return true;
+        }
+      }
       if (stack.length > 1) {
         setStack(st => st.slice(0, -1));
         return true;
@@ -64,7 +80,7 @@ function App(): React.JSX.Element {
       return false;
     });
     return () => sub.remove();
-  }, [stack.length]);
+  }, [stack]);
 
   const persist = useCallback(() => {
     if (registryRef.current != null) {
@@ -90,6 +106,21 @@ function App(): React.JSX.Element {
 
   if (booting) {
     return <View style={{flex: 1, backgroundColor: '#161616'}} />;
+  }
+
+  // CN app-store compliance: agreement + privacy consent must come first.
+  if (!consented) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor="#161616" />
+        <ConsentGate
+          onAgree={() => {
+            saveLegalConsent({version: LEGAL_DOC_VERSION, agreedAt: Date.now()});
+            setConsented(true);
+          }}
+        />
+      </>
+    );
   }
 
   if (!unlocked) {
@@ -165,7 +196,11 @@ function App(): React.JSX.Element {
     case 'console': {
       const machine = registryRef.current?.get(top.machineId) ?? null;
       screen = machine ? (
-        <ConsoleScreen machine={machine} onBack={pop} />
+        <ConsoleScreen
+          machine={machine}
+          onBack={pop}
+          registerBackHandler={registerConsoleBack}
+        />
       ) : (
         <MachineListScreen
           machines={machines}

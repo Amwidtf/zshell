@@ -21,4 +21,11 @@ export interface BiometricAuth {
 export const STORAGE_KEYS = {
   machines: 'zshell.machines.v1',
   lock: 'zshell.lock.v1',
+  legal: 'zshell.legal.v1',
 } as const;
+
+/** First-launch legal consent record (privacy policy / user agreement). */
+export interface LegalConsent {
+  version: number;
+  agreedAt: number;
+}
