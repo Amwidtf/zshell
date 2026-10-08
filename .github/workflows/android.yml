@@ -6,6 +6,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# New repos default the workflow token to read-only; releases need write.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
