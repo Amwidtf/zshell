@@ -2,41 +2,43 @@
 
 **[English](./README.en.md)** ｜ **中文**
 
-![android](https://github.com/Amwidtf/zshell/actions/workflows/android.yml/badge.svg)
+![version](https://img.shields.io/badge/version-0.0.1--alpha.3-blue)
+![platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)
+![react native](https://img.shields.io/badge/React%20Native-0.82-61DAFB?logo=react)
+![license](https://img.shields.io/badge/license-MIT-green)
 
-ZCode 远程控制的手机壳客户端（非官方第三方工具）· 当前版本 `v0.0.1-alpha.3`（Android）
+ZCode 桌面端「Web 远程控制」的手机壳客户端。非官方、开源、零收集。
 
-ZShell 把 ZCode 桌面端的「Web 远程控制」装进手机：扫码（或粘贴链接 / 相册识别二维码截图）配对，安全保存配对凭据，然后在一个加固的 WebView 中使用官方远程控制台——并补上官方网页版做不到的能力：**本地加密存储、应用锁（指纹 / 人脸 / 图案 / 密码）、收藏多机管理、移动端体验修补**。
+配对有三种入口：相机扫码、粘贴链接、从相册选一张二维码截图（PNG/JPEG 解码全在本地做，没有为此引入原生依赖）。凭据进加密存储，然后在一个加固的 WebView 里使用官方控制台。官方网页给不了的部分——凭据管理、应用锁、多机收藏、移动端体验修补——由这个壳补齐。
 
-> ⚠️ **非官方声明**：本项目与 ZCode / 智谱 AI 无任何关联，亦未获其授权或认可。使用需自备已启用「Web 远程控制」的 ZCode 桌面端。详见[免责声明](./docs/DISCLAIMER.md)。
+> ⚠️ 非官方项目，与 ZCode / 智谱 AI 没有关联，也未获授权。你需要自己的、已开启「Web 远程控制」的 ZCode 桌面端。细节见[免责声明](./docs/DISCLAIMER.md)。
 
 ## 功能
 
-- **双入口配对**：相机扫码 / 手动粘贴配对链接 / 从相册二维码截图识别（纯 JS 解码，零额外原生依赖）
-- **机器管理**：多台桌面端凭据管理，自定义命名、收藏置顶、手动排序；同一台机器重复配对自动合并并轮换凭据
-- **加密存储**：配对凭据（`sid` + `hash`）AES 加密落盘，密钥由 Android Keystore 托管，永不以明文存储
-- **应用锁**：指纹 / 人脸（系统生物识别，可用性动态检测）、图案、密码**可同时启用**，任一方式解锁——防止单一方式不可用时被锁在外；PBKDF2 本地验证；切入后台自动重新上锁
-- **行为补丁层**：document-start 注入、带探针自退役——例如修复部分移动浏览器上"回车变发送"的问题
-- **合规内建**：首次启动《用户协议》《隐私政策》同意门控；设置内法律文档中心；零数据收集
-- **体验细节**：系统返回键优先网页历史返回；边到边（全面屏/容器）适配；键盘顶起输入框
+- **机器管理**：自定义命名、收藏置顶、手动排序；同一台机器重复配对会合并记录并更新凭据
+- **加密存储**：配对凭据（`sid` + `hash`）AES 落盘，密钥托管在 Android Keystore，明文不落闪存
+- **应用锁**：指纹 / 人脸、图案、密码可以同时开着，任意一种都能解锁，单一方式失灵不至于被锁在外面；后台切回自动重新上锁；生物识别可用性按设备实际能力动态检测
+- **行为补丁**：document-start 注入、带探针自退役。比如修掉某些移动浏览器上"回车变成发送"的问题
+- **合规**：首次启动弹《用户协议》《隐私政策》同意门，设置里有法律文档中心；不收集任何数据
+- **体验细节**：系统返回键先走网页历史、无历史再回应用；边到边（全面屏与安卓容器）适配；键盘会把输入框顶起来
 
 ## 架构
 
 ```
 zcode-shell/                     # npm workspaces monorepo
 ├── packages/
-│   ├── core-shell/              # 零框架依赖纯 TS 核心（严格 TS 子集，ArkTS 兼容）
+│   ├── core-shell/              # 零框架依赖的纯 TS 核心（严格 TS 子集，ArkTS 兼容）：
 │   │                            #   配对解析 / endpoint 选择 / 状态机 / 机器注册表 /
-│   │                            #   应用锁模型 / SHA-256+HMAC+PBKDF2+Base64
-│   └── patch-bundle/            # 注入官方页面的行为补丁（自防护纪律）
+│   │                            #   应用锁 / SHA-256+HMAC+PBKDF2+Base64
+│   └── patch-bundle/            # 注入官方页面的行为补丁
 └── apps/mobile/                 # React Native 0.82 应用（新架构，Android 先行）
 ```
 
-设计原则：**逻辑单源（core-shell 零框架依赖），平台能力经端口注入**——UI 壳可换（RN / ArkTS），逻辑改一处生效于所有平台。详见[架构设计](./docs/architecture.md)。
+一条原则：**逻辑单源**。core-shell 不依赖任何框架，平台能力通过接口注入（存储、生物识别各有端口），所以将来换壳（RN 换 ArkTS 原生）时逻辑原样带走。展开见[架构设计](./docs/architecture.md)。
 
 ## 快速开始
 
-环境：Node ≥ 22 + npm ≥ 12、JDK 17–21、Android SDK（API 36）。**已知坑（monorepo 路径 / npm 补丁 / Windows 260 限制 / 国内镜像）务必先读[构建指南](./docs/build.md)。**
+环境：Node ≥ 22、npm ≥ 12、JDK 17–21、Android SDK（API 36）。动手前先读[构建指南](./docs/build.md)，里面有 monorepo 路径、npm 补丁、Windows 260 字符限制、国内镜像这几个已知坑。
 
 ```bash
 npm install                          # 安装全部依赖（含 npm patch）
@@ -45,41 +47,39 @@ cd apps/mobile/android
 ./gradlew assembleRelease            # 产出可独立运行的 release APK
 ```
 
-下载已发布版本：[Releases](https://github.com/Amwidtf/zshell/releases)（tag 构建自动发布）。
+已发布版本在 [Releases](https://github.com/Amwidtf/zshell/releases)，打 tag 自动构建。
 
 ## 多平台路线
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| Android | ✅ v0.0.1-alpha 可用 | RN 0.82 + 新架构（Fabric） |
-| HarmonyOS NEXT | 📋 规划中 | 同一 RN 工程 + RNOH（华为维护），Windows 可构建 |
-| iOS | 📋 规划中 | 工程已含 iOS 脚手架；构建需 macOS / 云 Mac |
+| Android | ✅ 可用 | RN 0.82，新架构（Fabric） |
+| HarmonyOS NEXT | 📋 规划中 | 同一工程 + RNOH，Windows 上可构建 |
+| iOS | 📋 规划中 | 脚手架已备好，构建需要 macOS 或云 Mac |
 
 ## 安全与隐私
 
-- **零收集**：无自建后端、无遥测、无第三方数据上报，全部数据仅存于设备本地加密存储
-- 配对凭据属**长期凭据**（等同密码），建议在桌面端定期轮换；应用锁防止他人滥用
-- **信任边界须知**：远程会话经官方中继传输，ZShell 不新增额外暴露面，也无法改变中继侧可见性——处理敏感代码库请自行评估
+零收集是底线：无后端、无账号、无遥测，所有数据只在本机加密存储里。配对凭据本质是长期凭据（等同密码），建议在桌面端定期轮换。另有一点要知情：远程会话经官方中继传输，本应用不新增暴露面，但中继侧的可见性由官方设计决定，处理敏感代码库前自己权衡。
 
-详见[隐私政策](./docs/PRIVACY.md)（零收集承诺与权限用途）、[安全说明](./docs/SECURITY.md)、[免责声明](./docs/DISCLAIMER.md)。
+全文：[隐私政策](./docs/PRIVACY.md)、[安全说明](./docs/SECURITY.md)、[免责声明](./docs/DISCLAIMER.md)。
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| [CHANGELOG.md](./CHANGELOG.md) | 版本更新日志（Release 说明的数据源） |
-| [AGENTS.md](./AGENTS.md) | AI 代理 / 贡献者工作指南（命令、硬约束、合规红线） |
-| [docs/architecture.md](./docs/architecture.md) | 架构设计与核心决策 |
-| [docs/build.md](./docs/build.md) | 构建开发指南与已知坑 |
-| [docs/release.md](./docs/release.md) | 发版流程与 Release 说明规范 |
-| [docs/compliance.md](./docs/compliance.md) | 合规实现与上架材料清单 |
+| [CHANGELOG.md](./CHANGELOG.md) | 更新日志，Release 说明从这里取 |
+| [AGENTS.md](./AGENTS.md) | AI 代理与贡献者工作指南 |
+| [docs/architecture.md](./docs/architecture.md) | 架构设计 |
+| [docs/build.md](./docs/build.md) | 构建指南与已知坑 |
+| [docs/release.md](./docs/release.md) | 发版流程 |
+| [docs/compliance.md](./docs/compliance.md) | 合规实现与上架材料 |
 
-## 版本
+## 开发方式
 
-`v0.0.1-alpha.3` —— Alpha 阶段，API 与存储格式可能调整。变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
+这个项目用 AI 结对完成：ZCode 编程智能体（GLM 模型驱动）承担了几乎全部代码与文档的编写，人类维护者负责提需求、做技术决策和验收。提交历史就是这份协作的记录。
 
 ## 许可
 
 [MIT](./LICENSE) © 2026 ZShell Contributors
 
-本项目基于 React Native 等开源软件构建（许可证清单见应用内「开源许可」）；所有第三方组件仅用于本地功能实现，不改变本项目的零收集承诺。
+基于 React Native 等开源软件构建（许可证清单见应用内"开源许可"）；所有第三方组件只做本地功能，不改变零收集的承诺。

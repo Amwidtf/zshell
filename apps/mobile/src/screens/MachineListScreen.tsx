@@ -51,8 +51,8 @@ export function MachineListScreen(props: MachineListScreenProps) {
           <Text style={styles.emptyEmoji}>📱➜🖥</Text>
           <Text style={font.body}>还没有配对的桌面端</Text>
           <Text style={[font.faint, {marginTop: 8, textAlign: 'center'}]}>
-            在 ZCode 桌面端打开「Web 远程控制」生成二维码，{'\n'}
-            用下方扫码配对；也可以直接粘贴配对链接。
+            先在 ZCode 桌面端打开「Web 远程控制」，{'\n'}
+            用下方扫码；或者直接粘贴配对链接。
           </Text>
         </ScrollView>
       ) : (
@@ -150,7 +150,7 @@ export function MachineListScreen(props: MachineListScreenProps) {
                       </TouchableOpacity>
                     </View>
                     <Text style={[font.faint, {marginTop: 6}]}>
-                      长按行可再次展开/收起管理操作
+                      长按条目展开管理，再长按收起
                     </Text>
                   </View>
                 ) : null}

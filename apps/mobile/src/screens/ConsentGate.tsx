@@ -30,7 +30,7 @@ export function ConsentGate({onAgree}: ConsentGateProps) {
       <Text style={styles.logo}>Z_</Text>
       <Text style={styles.title}>欢迎使用 ZShell</Text>
       <Text style={styles.intro}>
-        ZShell 是非官方开源的 ZCode 远程控制手机客户端。继续使用前，请阅读并同意：
+        ZShell 是非官方开源的 ZCode 远程控制手机客户端。开始使用前，请阅读并同意：
       </Text>
       <TouchableOpacity onPress={() => setOpenDoc(USER_AGREEMENT)}>
         <Text style={styles.link}>《用户协议与免责声明》</Text>
@@ -39,7 +39,7 @@ export function ConsentGate({onAgree}: ConsentGateProps) {
         <Text style={styles.link}>《隐私政策》</Text>
       </TouchableOpacity>
       <Text style={styles.promise}>
-        本应用零数据收集：无账号、无遥测、无第三方上报，全部数据仅存于本机加密存储。
+        零数据收集：没有账号、没有遥测、没有第三方上报，数据只存在本机加密存储里。
       </Text>
       <TouchableOpacity style={styles.agreeButton} onPress={onAgree}>
         <Text style={styles.agreeButtonText}>同意并继续（v{LEGAL_DOC_VERSION}）</Text>

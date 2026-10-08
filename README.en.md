@@ -2,23 +2,25 @@
 
 **English** | **[中文](./README.md)**
 
-![android](https://github.com/Amwidtf/zshell/actions/workflows/android.yml/badge.svg)
+![version](https://img.shields.io/badge/version-0.0.1--alpha.3-blue)
+![platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)
+![react native](https://img.shields.io/badge/React%20Native-0.82-61DAFB?logo=react)
+![license](https://img.shields.io/badge/license-MIT-green)
 
-An **unofficial third-party mobile client** for ZCode's "Web Remote Control" · Current version `v0.0.1-alpha.3` (Android)
+An unofficial, open-source, zero-collection mobile client for ZCode's "Web Remote Control".
 
-ZShell puts the ZCode desktop remote-control console on your phone: pair by scanning the QR code (or pasting the link / recognizing a QR screenshot from your gallery), keep the pairing credentials in encrypted storage, and use the official console inside a hardened WebView — plus what the official web page can't do: **encrypted local credential storage, app lock (fingerprint / face / pattern / password), multi-machine management, and mobile experience patches**.
+Three ways to pair: scan the QR with the camera, paste the link, or pick a QR screenshot from your gallery (PNG/JPEG decoding happens entirely on-device; no native dependency was added for it). Credentials go into encrypted storage, and the official console runs inside a hardened WebView. The parts the official web page can't give you — credential management, app lock, multi-machine favorites, mobile experience patches — the shell provides.
 
-> ⚠️ **Disclaimer**: This project is not affiliated with, endorsed by, or authorized by ZCode / Zhipu AI in any way. You need your own ZCode desktop client with "Web Remote Control" enabled. See the [disclaimer](./docs/DISCLAIMER.md) (Chinese).
+> ⚠️ Unofficial project. Not affiliated with or endorsed by ZCode / Zhipu AI. You need your own ZCode desktop client with "Web Remote Control" enabled. Details in the [disclaimer](./docs/DISCLAIMER.md) (Chinese).
 
 ## Features
 
-- **Three pairing entries**: camera scan / paste pairing URL / recognize a QR screenshot from the gallery (pure JS decoding, zero extra native deps)
-- **Machine management**: custom naming, favorites pinned on top, manual ordering; re-pairing the same desktop merges records and rotates credentials
-- **Encrypted storage**: pairing credentials (`sid` + `hash`) stored AES-encrypted, keys held by Android Keystore, never in plaintext
-- **App lock**: fingerprint / face (system biometrics with dynamic availability detection), pattern, and password **can all be enabled at once** — any one of them unlocks, so a single unavailable method never locks you out; PBKDF2 local verification; auto-relock on backgrounding
-- **Behavior patch layer**: document-start injection with self-retiring probes — e.g. fixes the "Enter submits instead of newline" issue on some mobile browsers
-- **Compliance built-in**: first-launch consent gate for the user agreement & privacy policy; in-app legal document center; zero data collection
-- **UX details**: system back prefers in-page history; edge-to-edge adaptation; keyboard lifts input fields
+- **Machine management**: custom names, favorites pinned on top, manual ordering; re-pairing the same desktop merges the record and rotates credentials
+- **Encrypted storage**: pairing credentials (`sid` + `hash`) AES-encrypted at rest, keys held by Android Keystore, never in plaintext
+- **App lock**: fingerprint / face, pattern, and password can all be enabled at once — any one unlocks, so a single failed method never locks you out; auto-relock on returning from background; biometric availability detected per device
+- **Behavior patches**: document-start injection with self-retiring probes — e.g. fixes "Enter submits instead of newline" on some mobile browsers
+- **Compliance**: first-launch consent gate for the user agreement & privacy policy; a legal-document center in settings; zero data collection
+- **Details**: system back prefers in-page history before app navigation; edge-to-edge adaptation (fullscreen and Android containers); keyboard lifts input fields
 
 ## Architecture
 
@@ -27,51 +29,49 @@ zcode-shell/                     # npm workspaces monorepo
 ├── packages/
 │   ├── core-shell/              # framework-free pure-TS core (strict TS subset,
 │   │                            #   ArkTS-compatible): pairing / endpoints / state
-│   │                            #   machine / app-lock / SHA-256+HMAC+PBKDF2+Base64
+│   │                            #   machine / registry / app lock / crypto
 │   └── patch-bundle/            # behavior patches injected into the official page
 └── apps/mobile/                 # React Native 0.82 app (new architecture, Android first)
 ```
 
-Design principle: **single-source logic** — `core-shell` has zero framework dependencies and platform abilities are injected through ports, so the UI shell can change (RN today, ArkTS tomorrow) while logic stays shared. See [architecture doc](./docs/architecture.md) (Chinese).
+One principle: **single-source logic**. core-shell depends on no framework and platform abilities are injected through ports (storage, biometrics each have one), so a future shell swap (RN to native ArkTS) carries the logic over unchanged. See the [architecture doc](./docs/architecture.md) (Chinese).
 
 ## Getting Started
 
-Requirements: Node ≥ 22 + npm ≥ 12, JDK 17–21, Android SDK (API 36). **Read the [build guide](./docs/build.md) first for known pitfalls** (monorepo paths / npm patch / Windows 260-char limit / CN mirrors).
+Requirements: Node ≥ 22, npm ≥ 12, JDK 17–21, Android SDK (API 36). Read the [build guide](./docs/build.md) first — monorepo paths, the npm patch, the Windows 260-char limit, and CN mirrors are all documented pitfalls.
 
 ```bash
 npm install                          # install everything (incl. npm patch)
 npx vitest run                       # core-shell unit tests
 cd apps/mobile/android
-./gradlew assembleRelease            # produces a standalone release APK
+./gradlew assembleRelease            # standalone release APK
 ```
 
-Published builds: [Releases](https://github.com/Amwidtf/zshell/releases) (built automatically on version tags).
+Published builds live in [Releases](https://github.com/Amwidtf/zshell/releases); tags build automatically.
 
 ## Platform Roadmap
 
 | Platform | Status | Notes |
 |---|---|---|
-| Android | ✅ v0.0.1-alpha | RN 0.82 + new architecture (Fabric) |
-| HarmonyOS NEXT | 📋 planned | Same RN project + RNOH (Huawei-maintained) |
-| iOS | 📋 planned | iOS scaffold included; needs macOS / cloud Mac |
+| Android | ✅ available | RN 0.82, new architecture (Fabric) |
+| HarmonyOS NEXT | 📋 planned | Same project + RNOH |
+| iOS | 📋 planned | Scaffold ready; needs macOS or a cloud Mac |
 
 ## Security & Privacy
 
-- **Zero collection**: no backend, no telemetry, no third-party reporting — all data stays on-device in encrypted storage
-- Pairing credentials are **long-lived secrets** (equivalent to a password); rotate them on the desktop periodically
-- **Trust boundary**: remote sessions travel through the official relay; ZShell adds no extra exposure but cannot change relay-side visibility — evaluate for yourself when working on sensitive codebases
+Zero collection, full stop: no backend, no accounts, no telemetry — everything stays in on-device encrypted storage. Pairing credentials are long-lived secrets (as good as a password); rotate them on the desktop from time to time. One thing to know: remote sessions travel through the official relay. This app adds no extra exposure, but relay-side visibility is the official design's call — weigh it yourself before working on sensitive codebases.
 
 Full documents (Chinese): [privacy policy](./docs/PRIVACY.md), [security notes](./docs/SECURITY.md), [disclaimer](./docs/DISCLAIMER.md).
 
 ## Documentation
 
-- [CHANGELOG.md](./CHANGELOG.md) — release history (source of release notes)
+- [CHANGELOG.md](./CHANGELOG.md) — release history; feeds Release notes
 - [AGENTS.md](./AGENTS.md) — guide for AI agents & contributors (Chinese)
 - [docs/](./docs) — architecture, build guide, release process, compliance (Chinese)
 
-## Version
+## How This Is Built
 
-`v0.0.1-alpha.3` — alpha stage; APIs and storage formats may change. See [CHANGELOG.md](./CHANGELOG.md).
+This project is an AI pairing effort: the ZCode coding agent (powered by the GLM model) wrote nearly all of the code and documentation, while the human maintainer supplies requirements, makes the technical calls, and accepts the results. The commit history is that collaboration's record.
 
 ## License
 

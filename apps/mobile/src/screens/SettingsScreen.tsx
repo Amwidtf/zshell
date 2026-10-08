@@ -125,8 +125,8 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
         <Text style={styles.sectionTitle}>应用锁</Text>
         <Text style={font.dim}>
           {lock.enabled
-            ? `已启用：${enabledNames.join(' + ')}（任一方式均可解锁）`
-            : '未启用 —— 可同时开启多种解锁方式，防止单一方式不可用时被锁在外'}
+            ? `已启用：${enabledNames.join(' + ')}，任选一种即可解锁`
+            : '未启用。可以同时开启多种解锁方式，避免单一方式失灵时被锁在外面'}
         </Text>
         {onlyBiometric ? (
           <Text style={styles.hintWarn}>
