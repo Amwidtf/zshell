@@ -4,7 +4,7 @@
  */
 
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {AppState, StatusBar, View} from 'react-native';
+import {AppState, BackHandler, StatusBar, View} from 'react-native';
 import {
   disabledConfig,
   LockConfig,
@@ -52,6 +52,19 @@ function App(): React.JSX.Element {
     });
     return () => sub.remove();
   }, [lock.enabled]);
+
+  // System back button pops our screen stack instead of exiting the app;
+  // at the root screen we fall through to the default (exit) behavior.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (stack.length > 1) {
+        setStack(st => st.slice(0, -1));
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [stack.length]);
 
   const persist = useCallback(() => {
     if (registryRef.current != null) {
