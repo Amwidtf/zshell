@@ -1,0 +1,24 @@
+{
+  "name": "zcode-shell",
+  "version": "0.0.1-alpha.1",
+  "private": true,
+  "description": "ZCode remote-control mobile shell (Android / iOS / HarmonyOS from one codebase)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "patchedDependencies": {
+    "@react-native/gradle-plugin@0.82.1": "patches/rn-gradle-plugin-drop-foojay.patch"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}

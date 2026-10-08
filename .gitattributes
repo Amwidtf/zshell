@@ -1,0 +1,49 @@
+# Normalize line endings: text files checked in with LF
+* text=auto eol=lf
+
+# Explicit text types
+*.md       text
+*.txt      text
+*.json     text
+*.yml      text
+*.yaml     text
+*.toml     text
+*.ini      text
+*.cfg      text
+*.sh       text eol=lf
+*.bash     text eol=lf
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Source code
+*.js       text
+*.mjs      text
+*.cjs      text
+*.ts       text
+*.tsx      text
+*.jsx      text
+*.py       text
+*.go       text
+*.rs       text
+*.java     text
+*.c        text
+*.h        text
+*.cpp      text
+*.hpp      text
+*.css      text
+*.scss     text
+*.html     text
+
+# Binary assets
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.webp     binary
+*.pdf      binary
+*.zip      binary
+*.gz       binary
+*.exe      binary
+*.dll      binary

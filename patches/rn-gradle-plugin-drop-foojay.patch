@@ -1,0 +1,14 @@
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -13,7 +13,9 @@
+   }
+ }
+
+-plugins { id("org.gradle.toolchains.foojay-resolver-convention").version("0.5.0") }
++// foojay resolver removed: incompatible with Gradle 9 (JvmVendorSpec.IBM_SEMERU was
++// removed) and unnecessary on this machine - JDK 17 is registered locally via
++// org.gradle.java.installations.paths in ~/.gradle/gradle.properties.
+
+ include(
+     ":react-native-gradle-plugin",

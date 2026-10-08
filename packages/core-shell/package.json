@@ -1,0 +1,8 @@
+{
+  "name": "@zshell/core-shell",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Framework-agnostic core logic for the ZCode remote-control shell (pairing URL, endpoints, state machine). Written in a strict TS subset that is also valid ArkTS, so the HarmonyOS native shell can consume it directly if we ever leave RN.",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

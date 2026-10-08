@@ -1,0 +1,8 @@
+// npm-workspaces monorepo: dependencies are hoisted to the workspace root,
+// so the RN gradle-plugin lives at ../../../node_modules instead of ../node_modules.
+pluginManagement { includeBuild("../../../node_modules/@react-native/gradle-plugin") }
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+rootProject.name = 'ZShell'
+include ':app'
+includeBuild("../../../node_modules/@react-native/gradle-plugin")

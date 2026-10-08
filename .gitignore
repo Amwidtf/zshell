@@ -1,0 +1,29 @@
+# Temp directories
+.tmp/
+.temp/
+tmp/
+temp/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+*.local
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.*
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

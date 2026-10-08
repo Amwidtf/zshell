@@ -1,0 +1,61 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install dependencies (workspaces + npm patches)
+        run: npm install
+
+      - name: Verify gradle-plugin patch applied
+        run: |
+          if grep -q "foojay-resolver-convention" node_modules/@react-native/gradle-plugin/settings.gradle.kts; then
+            echo "::error::npm patch did not apply — build would fail on Gradle 9"
+            exit 1
+          fi
+
+      - name: Run core-shell tests
+        run: npx vitest run
+
+      - name: Build release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zshell-release-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      # Tag pushes (v*) publish a GitHub Release with the APK attached —
+      # the download entry point for phones (no login needed on public repos).
+      - name: Create GitHub Release with APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

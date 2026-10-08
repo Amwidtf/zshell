@@ -1,0 +1,8 @@
+{
+  "name": "@zshell/patch-bundle",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Behavior patches injected into the official remote console page at document-start. Plain JS strings — consumed by whatever WebView host we run (RN webview today, ArkWeb tomorrow).",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}
