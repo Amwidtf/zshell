@@ -18,6 +18,11 @@ jobs:
         with:
           node-version: 20
 
+      # npm patchedDependencies (our gradle-plugin patch) needs npm >= 12;
+      # Node 20 bundles npm 10 which silently ignores the patch config.
+      - name: Upgrade npm
+        run: npm install -g npm@12
+
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
