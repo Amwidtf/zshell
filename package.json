@@ -3,6 +3,7 @@
   "version": "0.0.1-alpha.1",
   "private": true,
   "engines": {
+    "node": ">=22",
     "npm": ">=12"
   },
   "description": "ZCode remote-control mobile shell (Android / iOS / HarmonyOS from one codebase)",

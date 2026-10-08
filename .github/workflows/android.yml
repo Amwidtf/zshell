@@ -16,7 +16,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 24 mirrors the dev environment; npm 12 (needed for
+          # patchedDependencies) itself requires Node >= 22.
+          node-version: 24
 
       # npm patchedDependencies (our gradle-plugin patch) needs npm >= 12;
       # Node 20 bundles npm 10 which silently ignores the patch config.
