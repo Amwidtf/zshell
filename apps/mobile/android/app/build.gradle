@@ -15,9 +15,16 @@ react {
     reactNativeDir = file("../../../../node_modules/react-native")
     codegenDir = file("../../../../node_modules/@react-native/codegen")
     cliFile = file("../../../../node_modules/react-native/cli.js")
-    // Windows fails to auto-resolve the hermesc binary under the hoisted layout.
-    if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-        hermesCommand = file("../../../../node_modules/react-native/sdks/hermesc/win64-bin/hermesc.exe").absolutePath
+    // The plugin's hermesc auto-resolution breaks under the hoisted monorepo
+    // layout on every OS (%OS-BIN% left unsubstituted) — set it explicitly.
+    def osName = System.getProperty("os.name").toLowerCase()
+    def hermescDir = "../../../../node_modules/react-native/sdks/hermesc"
+    if (osName.contains("windows")) {
+        hermesCommand = file("${hermescDir}/win64-bin/hermesc.exe").absolutePath
+    } else if (osName.contains("mac")) {
+        hermesCommand = file("${hermescDir}/osx-bin/hermesc").absolutePath
+    } else {
+        hermesCommand = file("${hermescDir}/linux64-bin/hermesc").absolutePath
     }
 
     /* Variants */
