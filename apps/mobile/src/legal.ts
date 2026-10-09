@@ -13,7 +13,7 @@ export interface LegalDoc {
 }
 
 /** Bump to re-prompt consent after material legal changes. */
-export const LEGAL_DOC_VERSION = 1;
+export const LEGAL_DOC_VERSION = 2;
 
 export const USER_AGREEMENT: LegalDoc = {
   title: '用户协议与免责声明',
@@ -62,7 +62,11 @@ ZShell 的隐私设计只有一条原则：零收集。本应用没有自建服�
 1. 相机：仅用于扫描配对二维码，不拍照、不录像、不保存图像；
 2. 生物识别：仅调用系统本机验证完成应用锁解锁，不接触、不存储生物特征数据；
 3. 照片：仅在你主动选择「从相册识别二维码」时读取所选单张图片，识别完成即丢弃；
-4. 网络：仅连接你自己的桌面端配对地址与官方远程控制台，本应用无自建服务器。
+4. 网络：连接你自己的桌面端配对地址与官方远程控制台；本应用无自建服务器。
+   此外，仅当你主动点击「检查更新」时，应用会访问 GitHub（api.github.com 及其
+   下载服务）获取新版本并下载安装包——除此之外没有任何网络行为；
+5. 安装应用：下载完成后交由系统安装器安装更新，需要你在系统里授予
+   「来自此来源的应用安装」权限，安装与否始终由你确认。
 
 四、第三方组件
 以下开源组件均为本地功能实现，不进行任何数据上报：react-native / react-native-webview（应用框架与控制台容器）、react-native-camera-kit（扫码）、react-native-image-picker（相册选图）、react-native-mmkv-storage（加密存储）、react-native-biometrics（系统生物识别）、jsQR / jpeg-js / pako（本地二维码图片识别）。

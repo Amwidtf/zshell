@@ -92,8 +92,8 @@ android {
         applicationId "com.zshell"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "0.0.1-alpha.3"
+        versionCode 4
+        versionName "0.0.1-alpha.4"
     }
     signingConfigs {
         debug {

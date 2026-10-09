@@ -25,7 +25,7 @@ ZCode 桌面端「Web 远程控制」的手机壳客户端。非官方、开源�
 ## 架构
 
 ```
-zcode-shell/                     # npm workspaces monorepo
+zshell/                            # npm workspaces monorepo
 ├── packages/
 │   ├── core-shell/              # 零框架依赖的纯 TS 核心（严格 TS 子集，ArkTS 兼容）：
 │   │                            #   配对解析 / endpoint 选择 / 状态机 / 机器注册表 /

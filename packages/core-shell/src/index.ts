@@ -6,3 +6,4 @@ export * from './crypto';
 export * from './machine';
 export * from './applock';
 export * from './ports';
+export * from './update';

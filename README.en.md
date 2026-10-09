@@ -25,7 +25,7 @@ Three ways to pair: scan the QR with the camera, paste the link, or pick a QR sc
 ## Architecture
 
 ```
-zcode-shell/                     # npm workspaces monorepo
+zshell/                            # npm workspaces monorepo
 ├── packages/
 │   ├── core-shell/              # framework-free pure-TS core (strict TS subset,
 │   │                            #   ArkTS-compatible): pairing / endpoints / state

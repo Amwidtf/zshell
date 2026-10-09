@@ -28,6 +28,11 @@ export function PatternPad({size = 300, onComplete, hint}: PatternPadProps) {
   const [selected, setSelected] = useState<number[]>([]);
   const selectedRef = useRef<number[]>([]);
   const originRef = useRef({x: 0, y: 0});
+  // PanResponder is created once at mount; keep the latest callback in a ref
+  // so step changes (e.g. "draw again to confirm") aren't lost to a stale
+  // closure captured by the frozen responder.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   const hitTest = (px: number, py: number): number => {
     for (let i = 0; i < GRID * GRID; i++) {
@@ -65,7 +70,7 @@ export function PatternPad({size = 300, onComplete, hint}: PatternPadProps) {
       onPanResponderRelease: () => {
         const dots = selectedRef.current;
         if (dots.length >= 4) {
-          onComplete(dots);
+          onCompleteRef.current(dots);
         }
         selectedRef.current = [];
         setSelected([]);

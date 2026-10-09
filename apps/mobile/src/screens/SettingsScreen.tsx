@@ -1,5 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {
+  Clipboard,
+  Linking,
   ScrollView,
   StyleSheet,
   Switch,
@@ -11,8 +13,10 @@ import {
 import {
   activeSecrets,
   clearMethod,
+  isNewer as isNewerVersion,
   LockConfig,
   patternToString,
+  ReleaseInfo,
   setPassword,
   setPattern,
   setBiometric,
@@ -22,6 +26,7 @@ import {biometricAuth} from '../biometric';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {PatternPad} from '../PatternPad';
+import {downloadAndInstallApk, fetchLatestRelease, PROJECT_PAGE} from '../updater';
 import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
@@ -47,7 +52,16 @@ type Step =
   | {kind: 'passwordSet'; first: string | null}
   | {kind: 'verify'; title: string; action: () => void};
 
-/** Multi-method lock management: each method is set/cleared independently. */
+type UpdateState =
+  | {kind: 'idle'}
+  | {kind: 'checking'}
+  | {kind: 'failed'}
+  | {kind: 'latest'}
+  | {kind: 'available'; release: ReleaseInfo}
+  | {kind: 'downloading'; release: ReleaseInfo}
+  | {kind: 'downloadFailed'; release: ReleaseInfo};
+
+/** Settings: multi-method lock management + update check + legal center. */
 export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState<string | undefined>();
@@ -55,6 +69,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
   const [password, setPasswordValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
+  const [update, setUpdate] = useState<UpdateState>({kind: 'idle'});
 
   useEffect(() => {
     biometricAuth.isAvailable().then(r => {
@@ -71,27 +86,19 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
     lock.methods.password != null ? '密码' : null,
   ].filter(n => n != null);
 
-  /** Clearing a secret method requires proving identity first. */
+  // ---------- lock management ----------
+
   const requestVerify = (title: string, action: () => void) => {
     setPasswordValue('');
     setError(null);
     setStep({kind: 'verify', title, action});
   };
 
-  const runBiometricVerify = async (action: () => void) => {
-    const ok = await biometricAuth.prompt(titleFor('verify-biometric'));
-    if (ok) {
-      action();
-      setStep({kind: 'idle'});
-    } else {
-      setError('验证未通过');
-    }
-  };
-
-  const titleFor = (kind: string) =>
-    kind === 'verify-biometric' ? '验证以继续' : '验证身份';
-
-  const verifyBySecret = (kind: 'pattern' | 'password', secret: string, action: () => void) => {
+  const verifyBySecret = (
+    kind: 'pattern' | 'password',
+    secret: string,
+    action: () => void,
+  ) => {
     if (verifySecret(secret, kind, lock)) {
       action();
       setStep({kind: 'idle'});
@@ -114,15 +121,66 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
     setPasswordValue('');
   };
 
-  return (
-    <ScrollView style={styles.root} contentContainerStyle={{padding: 20, gap: 14}}>
-      <TouchableOpacity onPress={onBack}>
-        <Text style={{color: colors.accent, fontSize: 16}}>‹ 返回</Text>
-      </TouchableOpacity>
-      <Text style={font.title}>设置</Text>
+  const submitPasswordSet = () => {
+    if (step.kind !== 'passwordSet') {
+      return;
+    }
+    if (password.length < 4) {
+      setError('密码至少 4 位');
+      return;
+    }
+    if (step.first == null) {
+      setStep({...step, first: password});
+      setPasswordValue('');
+      setError(null);
+    } else if (step.first === password) {
+      finishPasswordSet(password);
+    } else {
+      setError('两次密码不一致');
+      setStep({...step, first: null});
+      setPasswordValue('');
+    }
+  };
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>应用锁</Text>
+  // ---------- update flow ----------
+
+  const checkUpdate = async () => {
+    setUpdate({kind: 'checking'});
+    const release = await fetchLatestRelease();
+    if (release == null) {
+      setUpdate({kind: 'failed'});
+      return;
+    }
+    setUpdate(
+      isNewerVersion(APP_VERSION, release)
+        ? {kind: 'available', release}
+        : {kind: 'latest'},
+    );
+  };
+
+  const startDownload = async (release: ReleaseInfo) => {
+    setUpdate({kind: 'downloading', release});
+    try {
+      await downloadAndInstallApk(release);
+      setUpdate({kind: 'idle'});
+    } catch {
+      setUpdate({kind: 'downloadFailed', release});
+    }
+  };
+
+  const sizeText = (bytes: number | null) =>
+    bytes == null ? '' : `${Math.round(bytes / 1048576)} MB`;
+
+  return (
+    <ScrollView style={styles.root} contentContainerStyle={{padding: 16, gap: 14}}>
+      <TouchableOpacity onPress={onBack} style={{paddingVertical: 4}}>
+        <Text style={{color: colors.accent, fontSize: 16}}>‹ 返回列表</Text>
+      </TouchableOpacity>
+      <Text style={styles.pageTitle}>设置</Text>
+
+      {/* ================= 应用锁 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>应用锁</Text>
         <Text style={font.dim}>
           {lock.enabled
             ? `已启用：${enabledNames.join(' + ')}，任选一种即可解锁`
@@ -134,98 +192,105 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
           </Text>
         ) : null}
 
-        {/* ---- biometric toggle ---- */}
-        <View style={styles.methodRow}>
-          <View style={{flex: 1}}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
             <Text style={font.body}>{biometricLabel(biometricType)}</Text>
             <Text style={font.faint}>
               {biometricAvailable
-                ? '使用系统指纹 / 人脸验证'
-                : '本机暂无可用生物识别（容器/模拟器通常不支持，需实体设备已录入）'}
+                ? '验证通过后开启；使用系统指纹 / 人脸'
+                : '本机暂无可用生物识别（容器/模拟器通常不支持）'}
             </Text>
           </View>
           <Switch
             value={lock.methods.biometric}
             disabled={!biometricAvailable && !lock.methods.biometric}
-            onValueChange={on => {
+            onValueChange={async on => {
               setError(null);
-              onSaveLock(setBiometric(lock, on));
+              if (!on) {
+                onSaveLock(setBiometric(lock, false));
+                return;
+              }
+              const ok = await biometricAuth.prompt('验证通过后开启生物识别');
+              if (ok) {
+                onSaveLock(setBiometric(lock, true));
+              } else {
+                setError('验证未通过，未开启生物识别');
+              }
             }}
             trackColor={{true: colors.accent}}
             thumbColor="#ffffff"
           />
         </View>
+        <View style={styles.divider} />
 
-        {/* ---- pattern row ---- */}
-        <View style={styles.methodRow}>
-          <View style={{flex: 1}}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
             <Text style={font.body}>图案</Text>
             <Text style={font.faint}>
               {lock.methods.pattern != null ? '已设置' : '未设置'}
             </Text>
           </View>
           <TouchableOpacity
-            style={styles.smallButton}
+            style={styles.rowButton}
             onPress={() => {
               setError(null);
               setStep({kind: 'patternSet', confirmOf: null});
             }}>
-            <Text style={styles.smallButtonText}>
+            <Text style={styles.rowButtonText}>
               {lock.methods.pattern != null ? '更换' : '设置'}
             </Text>
           </TouchableOpacity>
           {lock.methods.pattern != null ? (
             <TouchableOpacity
-              style={styles.smallButton}
+              style={styles.rowButton}
               onPress={() =>
                 requestVerify('清除图案', () =>
                   onSaveLock(clearMethod(lock, 'pattern')),
                 )
               }>
-              <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+              <Text style={[styles.rowButtonText, {color: colors.danger}]}>
                 清除
               </Text>
             </TouchableOpacity>
           ) : null}
         </View>
+        <View style={styles.divider} />
 
-        {/* ---- password row ---- */}
-        <View style={styles.methodRow}>
-          <View style={{flex: 1}}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
             <Text style={font.body}>密码</Text>
             <Text style={font.faint}>
               {lock.methods.password != null ? '已设置' : '未设置'}
             </Text>
           </View>
           <TouchableOpacity
-            style={styles.smallButton}
+            style={styles.rowButton}
             onPress={() => {
               setError(null);
               setPasswordValue('');
               setStep({kind: 'passwordSet', first: null});
             }}>
-            <Text style={styles.smallButtonText}>
+            <Text style={styles.rowButtonText}>
               {lock.methods.password != null ? '更换' : '设置'}
             </Text>
           </TouchableOpacity>
           {lock.methods.password != null ? (
             <TouchableOpacity
-              style={styles.smallButton}
+              style={styles.rowButton}
               onPress={() =>
                 requestVerify('清除密码', () =>
                   onSaveLock(clearMethod(lock, 'password')),
                 )
               }>
-              <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+              <Text style={[styles.rowButtonText, {color: colors.danger}]}>
                 清除
               </Text>
             </TouchableOpacity>
           ) : null}
         </View>
 
-        {/* ---- flows ---- */}
         {step.kind === 'patternSet' ? (
-          <View style={{alignItems: 'center', marginTop: 10}}>
+          <View style={{alignItems: 'center', marginTop: 14}}>
             <Text style={font.dim}>
               {step.confirmOf == null ? '设置解锁图案' : '请再画一次确认'}
             </Text>
@@ -249,7 +314,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
         ) : null}
 
         {step.kind === 'passwordSet' ? (
-          <View style={{gap: 10}}>
+          <View style={{gap: 10, marginTop: 10}}>
             <Text style={font.dim}>
               {step.first == null ? '设置解锁密码（至少 4 位）' : '请再输入一次确认'}
             </Text>
@@ -258,28 +323,12 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
               placeholder={step.first == null ? '输入密码' : '再次输入密码'}
               placeholderTextColor={colors.textFaint}
               secureTextEntry
+              returnKeyType="done"
               value={password}
               onChangeText={setPasswordValue}
+              onSubmitEditing={submitPasswordSet}
             />
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => {
-                if (password.length < 4) {
-                  setError('密码至少 4 位');
-                  return;
-                }
-                if (step.first == null) {
-                  setStep({...step, first: password});
-                  setPasswordValue('');
-                  setError(null);
-                } else if (step.first === password) {
-                  finishPasswordSet(password);
-                } else {
-                  setError('两次密码不一致');
-                  setStep({...step, first: null});
-                  setPasswordValue('');
-                }
-              }}>
+            <TouchableOpacity style={styles.primaryButton} onPress={submitPasswordSet}>
               <Text style={{color: '#fff', fontWeight: '600'}}>下一步</Text>
             </TouchableOpacity>
             {error != null ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -287,12 +336,20 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
         ) : null}
 
         {step.kind === 'verify' ? (
-          <View style={{gap: 10}}>
+          <View style={{gap: 10, marginTop: 10}}>
             <Text style={font.dim}>{step.title}（可用任意已启用的方式）</Text>
             {lock.methods.biometric && biometricAvailable ? (
               <TouchableOpacity
                 style={styles.primaryButton}
-                onPress={() => runBiometricVerify(step.action)}>
+                onPress={async () => {
+                  const ok = await biometricAuth.prompt('验证以继续');
+                  if (ok) {
+                    step.action();
+                    setStep({kind: 'idle'});
+                  } else {
+                    setError('验证未通过');
+                  }
+                }}>
                 <Text style={{color: '#fff', fontWeight: '600'}}>
                   使用{biometricLabel(biometricType)}
                 </Text>
@@ -303,11 +360,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
                 <PatternPad
                   hint={error ?? '绘制当前图案'}
                   onComplete={dots =>
-                    verifyBySecret(
-                      'pattern',
-                      patternToString(dots),
-                      step.action,
-                    )
+                    verifyBySecret('pattern', patternToString(dots), step.action)
                   }
                 />
               </View>
@@ -319,8 +372,12 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
                   placeholder="当前密码"
                   placeholderTextColor={colors.textFaint}
                   secureTextEntry
+                  returnKeyType="done"
                   value={password}
                   onChangeText={setPasswordValue}
+                  onSubmitEditing={() =>
+                    verifyBySecret('password', password, step.action)
+                  }
                 />
                 <TouchableOpacity
                   style={styles.primaryButton}
@@ -334,11 +391,80 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
         ) : null}
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>法律与关于</Text>
-        <Text style={font.faint}>
-          ZShell v{APP_VERSION} · 非官方第三方客户端 · 零数据收集
-        </Text>
+      {/* ================= 更新 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>更新</Text>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>当前版本 v{APP_VERSION}</Text>
+            <Text style={font.faint}>从 GitHub Releases 检查新版本</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.rowButton}
+            disabled={update.kind === 'checking' || update.kind === 'downloading'}
+            onPress={checkUpdate}>
+            <Text style={styles.rowButtonText}>
+              {update.kind === 'checking' ? '检查中…' : '检查更新'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {update.kind === 'failed' ? (
+          <Text style={styles.errorText}>
+            检查失败：无法访问 GitHub（国内网络可能需要代理）
+          </Text>
+        ) : null}
+        {update.kind === 'latest' ? (
+          <Text style={[font.faint, {marginTop: 6}]}>已是最新版本。</Text>
+        ) : null}
+        {update.kind === 'available' || update.kind === 'downloading' || update.kind === 'downloadFailed' ? (
+          <View style={{gap: 10, marginTop: 10}}>
+            <Text style={font.body}>
+              新版本 v{update.release.version}
+              {update.release.apkSize != null
+                ? ` · ${sizeText(update.release.apkSize)}`
+                : ''}
+            </Text>
+            {update.release.notes.length > 0 ? (
+              <Text style={font.faint} numberOfLines={6}>
+                {update.release.notes}
+              </Text>
+            ) : null}
+            {update.kind === 'downloading' ? (
+              <Text style={font.faint}>
+                系统后台下载中（进度见通知栏），完成后自动弹出安装
+              </Text>
+            ) : (
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => startDownload(update.release)}>
+                <Text style={{color: '#fff', fontWeight: '600'}}>
+                  下载并安装
+                </Text>
+              </TouchableOpacity>
+            )}
+            {update.kind === 'downloadFailed' ? (
+              <View style={{flexDirection: 'row', gap: 12, alignItems: 'center'}}>
+                <Text style={styles.errorText}>下载失败</Text>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(update.release.apkUrl)}>
+                  <Text style={{color: colors.accent, fontSize: 13}}>浏览器下载</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    Clipboard.setString(update.release.apkUrl);
+                  }}>
+                  <Text style={{color: colors.accent, fontSize: 13}}>复制链接</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* ================= 法律与关于 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>法律与关于</Text>
         {(
           [
             USER_AGREEMENT,
@@ -354,6 +480,15 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
             <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
           </TouchableOpacity>
         ))}
+        <TouchableOpacity
+          style={styles.legalRow}
+          onPress={() => Linking.openURL(PROJECT_PAGE)}>
+          <Text style={styles.legalRowText}>项目主页（GitHub）</Text>
+          <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
+        </TouchableOpacity>
+        <Text style={[font.faint, {marginTop: 8, textAlign: 'center'}]}>
+          ZShell · 非官方第三方客户端 · 零数据收集
+        </Text>
       </View>
 
       <LegalDocModal doc={openDoc} onClose={() => setOpenDoc(null)} />
@@ -363,26 +498,33 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  section: {
+  pageTitle: {...font.title, marginBottom: 2},
+  card: {
     backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     gap: 8,
   },
-  sectionTitle: {color: colors.text, fontSize: 16, fontWeight: '600'},
-  methodRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 6,
+  cardTitle: {
+    color: colors.textFaint,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginBottom: 2,
   },
-  smallButton: {
+  row: {flexDirection: 'row', alignItems: 'center', gap: 10},
+  rowMain: {flex: 1, gap: 2},
+  rowButton: {
     backgroundColor: colors.bgInput,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  smallButtonText: {color: colors.textDim, fontSize: 13},
+  rowButtonText: {color: colors.textDim, fontSize: 13},
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginVertical: 4,
+  },
   hintWarn: {color: colors.star, fontSize: 12},
   input: {
     backgroundColor: colors.bgInput,

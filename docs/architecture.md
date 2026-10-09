@@ -5,7 +5,7 @@
 ## 总体结构
 
 ```
-zcode-shell/                     # npm workspaces monorepo
+zshell/                            # npm workspaces monorepo
 ├── packages/
 │   ├── core-shell/              # 零框架依赖的纯 TS 核心
 │   └── patch-bundle/            # 注入官方页面的行为补丁
