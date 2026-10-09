@@ -68,6 +68,7 @@ cd apps/mobile/android
 | 文档 | 内容 |
 |---|---|
 | [CHANGELOG.md](./CHANGELOG.md) | 更新日志，Release 说明从这里取 |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | 参与贡献指南 |
 | [AGENTS.md](./AGENTS.md) | AI 代理与贡献者工作指南 |
 | [docs/architecture.md](./docs/architecture.md) | 架构设计 |
 | [docs/build.md](./docs/build.md) | 构建指南与已知坑 |

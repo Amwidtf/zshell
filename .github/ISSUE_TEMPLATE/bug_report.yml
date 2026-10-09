@@ -1,0 +1,37 @@
+name: 问题反馈（Bug）
+description: 功能不工作、显示异常、崩溃等
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 描述你遇到的问题，以及你当时在做什么
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的表现
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 设置 → 法律与关于 里可见，如 0.0.1-alpha.3
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备与系统
+      description: 机型与系统版本；若在容器（卓易通）或模拟器中运行请注明
+      placeholder: 如：华为 Mate · HarmonyOS 6 · 卓易通容器
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 截图或日志
+      description: 可选。有截图更好
