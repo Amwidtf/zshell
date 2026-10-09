@@ -27,3 +27,6 @@ logs/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Project-level installed agent skills
+.claude/

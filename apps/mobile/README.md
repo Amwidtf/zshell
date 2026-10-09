@@ -11,7 +11,7 @@ npm test                  # 应用层 jest 测试
 
 # 手动构建 APK
 cd android && ./gradlew assembleDebug
-# 产物：android/app/build/outputs/apk/debug/app-debug.apk
+# 产物：android/app/build/outputs/apk/debug/ZShell-<版本>-debug.apk
 ```
 
 ## 结构

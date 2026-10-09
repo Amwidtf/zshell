@@ -95,6 +95,14 @@ android {
         versionCode 4
         versionName "0.0.1-alpha.4"
     }
+
+    // Artifact naming: ZShell-<version>-<buildType>.apk (instead of app-release.apk)
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "ZShell-${variant.versionName}-${variant.name}.apk"
+        }
+    }
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

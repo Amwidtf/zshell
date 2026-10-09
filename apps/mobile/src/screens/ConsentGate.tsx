@@ -1,7 +1,6 @@
 import React, {useState} from 'react';
 import {BackHandler, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {
-  LEGAL_DOC_VERSION,
   PRIVACY_POLICY,
   USER_AGREEMENT,
   LegalDoc,
@@ -42,7 +41,7 @@ export function ConsentGate({onAgree}: ConsentGateProps) {
         零数据收集：没有账号、没有遥测、没有第三方上报，数据只存在本机加密存储里。
       </Text>
       <TouchableOpacity style={styles.agreeButton} onPress={onAgree}>
-        <Text style={styles.agreeButtonText}>同意并继续（v{LEGAL_DOC_VERSION}）</Text>
+        <Text style={styles.agreeButtonText}>同意并继续</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.declineButton} onPress={decline}>
         <Text style={styles.declineButtonText}>不同意并退出</Text>
