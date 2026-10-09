@@ -77,6 +77,27 @@ export function isNewer(current: string, release: ReleaseInfo): boolean {
   return compareVersions(release.version, current) > 0;
 }
 
+/**
+ * Pick the best APK asset for a phone: arm64-v8a build when present, else the
+ * universal APK, else any APK (ABI split releases upload several files).
+ */
+function pickApkAsset(assets: AssetLike[]): AssetLike | null {
+  const apks = assets.filter(
+    a =>
+      typeof a.name === 'string' &&
+      (a.name as string).endsWith('.apk') &&
+      typeof a.browser_download_url === 'string',
+  );
+  if (apks.length === 0) {
+    return null;
+  }
+  return (
+    apks.find(a => (a.name as string).includes('arm64-v8a')) ??
+    apks.find(a => (a.name as string).includes('universal')) ??
+    apks[0]
+  );
+}
+
 /** Extract update info from a GitHub `releases/latest` response; null when unusable. */
 export function parseLatestRelease(json: unknown): ReleaseInfo | null {
   if (json == null || typeof json !== 'object') {
@@ -87,10 +108,8 @@ export function parseLatestRelease(json: unknown): ReleaseInfo | null {
     return null;
   }
   const assets = Array.isArray(rel.assets) ? (rel.assets as AssetLike[]) : [];
-  const apk = assets.find(
-    a => typeof a.name === 'string' && (a.name as string).endsWith('.apk'),
-  );
-  if (apk == null || typeof apk.browser_download_url !== 'string') {
+  const apk = pickApkAsset(assets);
+  if (apk == null) {
     return null;
   }
   return {
@@ -101,4 +120,26 @@ export function parseLatestRelease(json: unknown): ReleaseInfo | null {
     apkSize: typeof apk.size === 'number' ? apk.size : null,
     publishedAt: typeof rel.published_at === 'string' ? rel.published_at : null,
   };
+}
+
+/**
+ * Pick the newest usable release from a GitHub `GET /releases` list.
+ * Needed because pre-release-marked versions are excluded from
+ * `releases/latest` — the list endpoint includes them.
+ */
+export function pickLatestRelease(json: unknown): ReleaseInfo | null {
+  if (!Array.isArray(json)) {
+    return null;
+  }
+  let best: ReleaseInfo | null = null;
+  for (const item of json) {
+    const info = parseLatestRelease(item);
+    if (info == null) {
+      continue;
+    }
+    if (best == null || compareVersions(info.version, best.version) > 0) {
+      best = info;
+    }
+  }
+  return best;
 }

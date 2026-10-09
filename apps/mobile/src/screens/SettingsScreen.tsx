@@ -2,6 +2,8 @@ import React, {useEffect, useState} from 'react';
 import {
   Clipboard,
   Linking,
+  PermissionsAndroid,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -25,6 +27,7 @@ import {
 import {biometricAuth} from '../biometric';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
+import {AppPrefs, loadPrefs, notifications, savePrefs} from '../notifications';
 import {PatternPad} from '../PatternPad';
 import {downloadAndInstallApk, fetchLatestRelease, PROJECT_PAGE} from '../updater';
 import {biometricLabel} from './LockScreen';
@@ -70,6 +73,60 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
   const [update, setUpdate] = useState<UpdateState>({kind: 'idle'});
+  const [prefs, setPrefs] = useState<AppPrefs>({notificationsEnabled: true});
+  // null = unknown (still checking), true/false = granted or not.
+  const [camGranted, setCamGranted] = useState<boolean | null>(null);
+  const [camBlocked, setCamBlocked] = useState(false);
+  const [notifGranted, setNotifGranted] = useState<boolean | null>(null);
+  const [notifBlocked, setNotifBlocked] = useState(false);
+
+  const refreshPermissions = async () => {
+    try {
+      setCamGranted(
+        await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA),
+      );
+    } catch {
+      setCamGranted(null);
+    }
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      try {
+        setNotifGranted(
+          await PermissionsAndroid.check(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+          ),
+        );
+      } catch {
+        setNotifGranted(null);
+      }
+    } else if (notifications != null) {
+      try {
+        setNotifGranted(await notifications.areEnabled());
+      } catch {
+        setNotifGranted(null);
+      }
+    } else {
+      setNotifGranted(true);
+    }
+  };
+
+  useEffect(() => {
+    setPrefs(loadPrefs());
+    refreshPermissions();
+  }, []);
+
+  const requestPermission = async (
+    permission: string,
+    setGranted: (v: boolean) => void,
+    setBlocked: (v: boolean) => void,
+  ) => {
+    try {
+      const result = await PermissionsAndroid.request(permission);
+      setGranted(result === PermissionsAndroid.RESULTS.GRANTED);
+      setBlocked(result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN);
+    } catch {
+      setGranted(false);
+    }
+  };
 
   useEffect(() => {
     biometricAuth.isAvailable().then(r => {
@@ -460,6 +517,102 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
             ) : null}
           </View>
         ) : null}
+      </View>
+
+      {/* ================= 权限与通知 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>权限与通知</Text>
+
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>状态通知</Text>
+            <Text style={font.faint}>连接断开、被顶下线、等待批准时提醒</Text>
+          </View>
+          <Switch
+            value={prefs.notificationsEnabled}
+            onValueChange={on => {
+              const next = {...prefs, notificationsEnabled: on};
+              setPrefs(next);
+              savePrefs(next);
+            }}
+            trackColor={{true: colors.accent}}
+            thumbColor="#ffffff"
+          />
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>相机（扫码配对）</Text>
+            <Text style={font.faint}>
+              {camGranted == null
+                ? '检查中…'
+                : camGranted
+                  ? '已授权'
+                  : camBlocked
+                    ? '已拒绝，需到系统设置开启'
+                    : '未授权'}
+            </Text>
+          </View>
+          {camGranted !== true ? (
+            camBlocked ? (
+              <TouchableOpacity
+                style={styles.rowButton}
+                onPress={() => Linking.openSettings()}>
+                <Text style={styles.rowButtonText}>去系统设置</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.rowButton}
+                onPress={() =>
+                  requestPermission(
+                    PermissionsAndroid.PERMISSIONS.CAMERA,
+                    v => setCamGranted(v),
+                    v => setCamBlocked(v),
+                  )
+                }>
+                <Text style={styles.rowButtonText}>申请权限</Text>
+              </TouchableOpacity>
+            )
+          ) : null}
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>系统通知（状态提醒）</Text>
+            <Text style={font.faint}>
+              {notifGranted == null
+                ? '检查中…'
+                : notifGranted
+                  ? '已授权'
+                  : notifBlocked
+                    ? '已拒绝，需到系统设置开启'
+                    : '未授权'}
+            </Text>
+          </View>
+          {notifGranted !== true ? (
+            notifBlocked ? (
+              <TouchableOpacity
+                style={styles.rowButton}
+                onPress={() => Linking.openSettings()}>
+                <Text style={styles.rowButtonText}>去系统设置</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.rowButton}
+                onPress={() =>
+                  requestPermission(
+                    PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+                    v => setNotifGranted(v),
+                    v => setNotifBlocked(v),
+                  )
+                }>
+                <Text style={styles.rowButtonText}>申请权限</Text>
+              </TouchableOpacity>
+            )
+          ) : null}
+        </View>
       </View>
 
       {/* ================= 法律与关于 ================= */}

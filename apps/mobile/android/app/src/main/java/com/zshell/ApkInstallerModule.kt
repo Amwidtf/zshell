@@ -95,7 +95,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
 
 class ApkInstallerPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext) =
-      listOf(ApkInstallerModule(reactContext))
+      listOf(ApkInstallerModule(reactContext), NotificationsModule(reactContext))
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext,

@@ -44,6 +44,35 @@ describe('parseLatestRelease', () => {
     expect(isNewer('0.0.1', r)).toBe(false);
   });
 
+  it('prefers arm64 asset, then universal, then any APK', () => {
+    const base = {tag_name: 'v1.0.0'};
+    expect(
+      parseLatestRelease({
+        ...base,
+        assets: [
+          {name: 'ZShell-1.0.0-universal-release.apk', browser_download_url: 'u', size: 1},
+          {name: 'ZShell-1.0.0-arm64-v8a-release.apk', browser_download_url: 'a', size: 2},
+          {name: 'ZShell-1.0.0-x86_64-release.apk', browser_download_url: 'x', size: 3},
+        ],
+      })!.apkUrl,
+    ).toBe('a');
+    expect(
+      parseLatestRelease({
+        ...base,
+        assets: [
+          {name: 'ZShell-1.0.0-x86_64-release.apk', browser_download_url: 'x'},
+          {name: 'ZShell-1.0.0-universal-release.apk', browser_download_url: 'u'},
+        ],
+      })!.apkUrl,
+    ).toBe('u');
+    expect(
+      parseLatestRelease({
+        ...base,
+        assets: [{name: 'ZShell-1.0.0-x86_64-release.apk', browser_download_url: 'x'}],
+      })!.apkUrl,
+    ).toBe('x');
+  });
+
   it('rejects unusable payloads', () => {
     expect(parseLatestRelease(null)).toBeNull();
     expect(parseLatestRelease({})).toBeNull();

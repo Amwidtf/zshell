@@ -5,10 +5,25 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {WebView, WebViewNavigation} from 'react-native-webview';
-import {buildConsoleUrl, MachineRecord} from '@zshell/core-shell';
+import {WebView, WebViewNavigation, WebViewMessageEvent} from 'react-native-webview';
+import {
+  buildConsoleUrl,
+  ConsoleStatus,
+  deriveConsoleStatus,
+  MachineRecord,
+  parseConsoleEvent,
+} from '@zshell/core-shell';
 import {buildPatchSource} from '@zshell/patch-bundle';
+import {loadPrefs, notifications} from '../notifications';
 import {colors, font} from '../theme';
+
+const STATUS_META: Record<ConsoleStatus, {label: string; color: string}> = {
+  connecting: {label: '连接中…', color: colors.star},
+  connected: {label: '已连接', color: colors.success},
+  waiting: {label: '等待桌面端上线', color: colors.star},
+  disconnected: {label: '连接已断开', color: colors.danger},
+  kicked: {label: '已在其他设备连接', color: colors.danger},
+};
 
 interface ConsoleScreenProps {
   machine: MachineRecord;
@@ -30,7 +45,50 @@ export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScr
   const webviewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [status, setStatus] = useState<ConsoleStatus>('connecting');
+  const prefsRef = useRef(loadPrefs());
   const url = useMemo(() => buildConsoleUrl(machine.credentials), [machine]);
+
+  useEffect(() => {
+    prefsRef.current = loadPrefs();
+  }, []);
+
+  const notify = useCallback((id: number, title: string, body: string) => {
+    if (!prefsRef.current.notificationsEnabled || notifications == null) {
+      return;
+    }
+    notifications.notify(id, title, body);
+  }, []);
+
+  const handleBridgeMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      const bridgeEvent = parseConsoleEvent(event.nativeEvent.data);
+      if (bridgeEvent == null) {
+        return;
+      }
+      if (bridgeEvent.type === 'approval-waiting') {
+        notify(2, 'ZCode · 等待你的批准', 'Agent 请求执行操作，点开应用处理');
+        return;
+      }
+      setStatus(prev => {
+        const next = deriveConsoleStatus(prev, bridgeEvent);
+        if (next !== prev) {
+          if (next === 'kicked') {
+            notify(3, '会话已在其他设备连接', '如需夺回请点开应用重连');
+          } else if (next === 'disconnected' && prev === 'connected') {
+            notify(4, '连接已断开', '正在自动重连，可点开应用查看');
+          }
+        }
+        return next;
+      });
+    },
+    [notify],
+  );
+
+  const reload = useCallback(() => {
+    setStatus('connecting');
+    setReloadKey(k => k + 1);
+  }, []);
 
   const handleWebBack = useCallback(() => {
     if (canGoBackRef.current && webviewRef.current != null) {
@@ -54,11 +112,13 @@ export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScr
         <Text style={styles.title} numberOfLines={1}>
           {machine.name}
         </Text>
-        <TouchableOpacity
-          onPress={() => setReloadKey(k => k + 1)}
-          style={styles.reloadButton}>
+        <TouchableOpacity onPress={reload} style={styles.reloadButton}>
           <Text style={styles.reloadText}>重连</Text>
         </TouchableOpacity>
+      </View>
+      <View style={styles.statusStrip}>
+        <View style={[styles.statusDot, {backgroundColor: STATUS_META[status].color}]} />
+        <Text style={styles.statusText}>{STATUS_META[status].label}</Text>
       </View>
       <WebView
         key={reloadKey}
@@ -75,12 +135,11 @@ export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScr
         onNavigationStateChange={(nav: WebViewNavigation) => {
           canGoBackRef.current = nav.canGoBack;
         }}
+        onMessage={handleBridgeMessage}
         renderError={code => (
           <View style={styles.errorBox}>
             <Text style={font.dim}>页面加载失败（{code}）</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => setReloadKey(k => k + 1)}>
+            <TouchableOpacity style={styles.retryButton} onPress={reload}>
               <Text style={{color: '#fff'}}>重试</Text>
             </TouchableOpacity>
           </View>
@@ -106,6 +165,18 @@ const styles = StyleSheet.create({
   title: {...font.body, flex: 1, textAlign: 'center'},
   reloadButton: {paddingHorizontal: 12, paddingVertical: 8},
   reloadText: {color: colors.accent, fontSize: 14},
+  statusStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: colors.bgElevated,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  statusDot: {width: 8, height: 8, borderRadius: 4},
+  statusText: {color: colors.textDim, fontSize: 12},
   webview: {flex: 1, backgroundColor: colors.bg},
   errorBox: {flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16},
   retryButton: {

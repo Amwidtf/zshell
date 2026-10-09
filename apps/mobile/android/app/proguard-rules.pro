@@ -4,7 +4,10 @@
 # You can edit the include path and order by changing the proguardFiles
 # directive in build.gradle.
 #
-# For more details, see
+# For more details, see:
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# Add any project specific keep options here:
+# App-native modules are tiny and bridge via annotation reflection; keeping
+# them unminified costs nothing meaningful and removes a whole risk class.
+# (RN/react-android and other AARs ship their own consumer rules.)
+-keep class com.zshell.** { *; }

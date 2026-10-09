@@ -1,17 +1,19 @@
 import {NativeModules} from 'react-native';
-import {parseLatestRelease, ReleaseInfo} from '@zshell/core-shell';
+import {pickLatestRelease, ReleaseInfo} from '@zshell/core-shell';
 
-const RELEASES_LATEST =
-  'https://api.github.com/repos/Amwidtf/zshell/releases/latest';
+// List endpoint (not /releases/latest): pre-release-marked versions are
+// excluded from "latest", and our alphas carry that mark.
+const RELEASES_LIST =
+  'https://api.github.com/repos/Amwidtf/zshell/releases?per_page=20';
 
 export const PROJECT_PAGE = 'https://github.com/Amwidtf/zshell';
 
-/** Fetch the latest release from GitHub; null on any failure. */
+/** Fetch releases and pick the newest by semver comparison; null on failure. */
 export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(RELEASES_LATEST, {
+    const res = await fetch(RELEASES_LIST, {
       headers: {Accept: 'application/vnd.github+json'},
       signal: controller.signal,
     });
@@ -19,7 +21,7 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
     if (!res.ok) {
       return null;
     }
-    return parseLatestRelease(await res.json());
+    return pickLatestRelease(await res.json());
   } catch {
     return null;
   }

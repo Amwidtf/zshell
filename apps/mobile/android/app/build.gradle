@@ -67,7 +67,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -92,14 +92,26 @@ android {
         applicationId "com.zshell"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "0.0.1-alpha.4"
+        versionCode 5
+        versionName "0.0.1-alpha.5"
     }
 
-    // Artifact naming: ZShell-<version>-<buildType>.apk (instead of app-release.apk)
+    // Artifact naming: ZShell-<version>-[abi]-<buildType>.apk. With ABI splits
+    // enabled, per-ABI outputs carry their abi name and one universal APK is
+    // kept as the fallback (also what the in-app updater prefers after arm64).
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
-            outputFileName = "ZShell-${variant.versionName}-${variant.name}.apk"
+            def abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
+            outputFileName = "ZShell-${variant.versionName}-${abi}-${variant.name}.apk"
+        }
+    }
+
+    splits {
+        abi {
+            enable true
+            reset()
+            include "arm64-v8a", "armeabi-v7a", "x86_64"
+            universalApk true
         }
     }
 

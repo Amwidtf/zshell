@@ -22,6 +22,7 @@ export const STORAGE_KEYS = {
   machines: 'zshell.machines.v1',
   lock: 'zshell.lock.v1',
   legal: 'zshell.legal.v1',
+  prefs: 'zshell.prefs.v1',
 } as const;
 
 /** First-launch legal consent record (privacy policy / user agreement). */
