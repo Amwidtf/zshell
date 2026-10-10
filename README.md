@@ -2,7 +2,7 @@
 
 **[English](./README.en.md)** ｜ **中文**
 
-![version](https://img.shields.io/badge/version-0.0.1--alpha.3-blue)
+![version](https://img.shields.io/github/v/tag/Amwidtf/zshell?label=version&color=blue)
 ![platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)
 ![react native](https://img.shields.io/badge/React%20Native-0.82-61DAFB?logo=react)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -18,6 +18,9 @@ ZCode 桌面端「Web 远程控制」的手机壳客户端。非官方、开源�
 - **机器管理**：自定义命名、收藏置顶、手动排序；同一台机器重复配对会合并记录并更新凭据
 - **加密存储**：配对凭据（`sid` + `hash`）AES 落盘，密钥托管在 Android Keystore，明文不落闪存
 - **应用锁**：指纹 / 人脸、图案、密码可以同时开着，任意一种都能解锁，单一方式失灵不至于被锁在外面；后台切回自动重新上锁；生物识别可用性按设备实际能力动态检测
+- **连接状态与通知**：控制台顶部实时状态条（连接中 / 已连接 / 等待桌面端 / 已断开 / 被顶下线）；断线、被顶、Agent 等待批准时发本地通知
+- **应用内更新**：检查 GitHub Releases 新版本，下载进度、失败原因、浏览器兜底下载都有；启动时可自动检查（可关，只提醒不自动装）
+- **下载管理**：更新包和控制台页面里下载的文件统一列在一处，进度、取消、打开、删除、失败重试
 - **行为补丁**：document-start 注入、带探针自退役。比如修掉某些移动浏览器上"回车变成发送"的问题
 - **合规**：首次启动弹《用户协议》《隐私政策》同意门，设置里有法律文档中心；不收集任何数据
 - **体验细节**：系统返回键先走网页历史、无历史再回应用；边到边（全面屏与安卓容器）适配；键盘会把输入框顶起来

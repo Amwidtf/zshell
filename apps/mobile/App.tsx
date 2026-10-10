@@ -62,10 +62,11 @@ function App(): React.JSX.Element {
     setBooting(false);
   }, []);
 
-  // Relock whenever the app leaves the foreground while the lock is enabled.
+  // Relock whenever the app leaves the foreground while the lock is enabled
+  // ('inactive' covers the recents screen / system dialogs on Android).
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (state === 'background' && lock.enabled) {
+      if ((state === 'background' || state === 'inactive') && lock.enabled) {
         setUnlocked(false);
       }
     });

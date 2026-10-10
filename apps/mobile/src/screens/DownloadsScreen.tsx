@@ -11,6 +11,7 @@ import {
   DownloadItem,
   isActive,
   openDownloadedFile,
+  openDownloadsUi,
   queryDownloads,
   removeDownload,
   retryDownload,
@@ -62,7 +63,10 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
       case 'paused':
         return '已暂停';
       case 'successful':
-        return '已完成';
+        // On success bytesSoFar equals the final file size.
+        return item.bytesSoFar > 0
+          ? `已完成 · ${formatBytes(item.bytesSoFar)}`
+          : '已完成';
       case 'failed':
         return `失败：${item.reason ?? '未知原因'}`;
     }
@@ -75,7 +79,8 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
       </TouchableOpacity>
       <Text style={styles.pageTitle}>下载管理</Text>
       <Text style={font.faint}>
-        应用更新与控制台页面里触发的下载都会出现在这里（控制台文件保存在系统公共下载目录）
+        更新包存在应用私有目录，安装后自动清理；控制台里下载的文件存在系统
+        公共下载目录，可用「存储位置」跳转查看
       </Text>
 
       {error != null ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -83,7 +88,10 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
 
       {items != null && items.length === 0 ? (
         <View style={styles.card}>
-          <Text style={font.dim}>暂无下载记录</Text>
+          <Text style={font.dim}>还没有下载记录</Text>
+          <Text style={font.faint}>
+            在设置里下载更新、或在控制台页面里下载文件后，会在这里显示进度
+          </Text>
         </View>
       ) : null}
 
@@ -130,8 +138,17 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
                   <TouchableOpacity
                     style={styles.button}
                     onPress={() => act(() => openDownloadedFile(item.id))}>
-                    <Text style={styles.buttonText}>打开</Text>
+                    <Text style={styles.buttonText}>
+                      {item.kind === 'update' ? '安装' : '打开'}
+                    </Text>
                   </TouchableOpacity>
+                  {item.kind === 'file' ? (
+                    <TouchableOpacity
+                      style={styles.button}
+                      onPress={() => act(() => openDownloadsUi())}>
+                      <Text style={styles.buttonText}>存储位置</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   <TouchableOpacity
                     style={styles.button}
                     onPress={() => act(() => removeDownload(item.id))}>

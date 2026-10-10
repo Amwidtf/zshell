@@ -28,6 +28,7 @@ interface DownloadsNativeModule {
   queryDownloads(): Promise<DownloadItem[]>;
   removeDownload(id: number): Promise<void>;
   openDownloadedFile(id: number): Promise<void>;
+  openDownloadsUi(): Promise<void>;
   listUpdateApks(): Promise<string[]>;
   deleteUpdateApk(name: string): void;
   openUrlInBrowser(url: string): Promise<void>;
@@ -65,6 +66,11 @@ export function removeDownload(id: number): Promise<void> {
 
 export function openDownloadedFile(id: number): Promise<void> {
   return module().openDownloadedFile(id);
+}
+
+/** Jump to the system Downloads screen (console files live in public Downloads). */
+export function openDownloadsUi(): Promise<void> {
+  return module().openDownloadsUi();
 }
 
 export function isActive(status: DownloadStatus): boolean {

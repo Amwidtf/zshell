@@ -92,8 +92,8 @@ android {
         applicationId "com.zshell"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
-        versionName "0.0.1-alpha.7"
+        versionCode 8
+        versionName "0.0.1-alpha.8"
     }
 
     // Artifact naming: ZShell-<version>-[abi]-<buildType>.apk. With ABI splits
@@ -122,15 +122,32 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Private release key passed via -P properties (CI injects it
+            // from Actions secrets). The same key signs every channel
+            // (alpha/beta/stable) so users upgrade in place. Local builds
+            // without the key fall back to the committed debug key.
+            def zsStoreFile = project.findProperty('ZS_STORE_FILE')
+            def zsStorePass = project.findProperty('ZS_STORE_PASSWORD')
+            if (zsStoreFile != null && zsStorePass != null) {
+                storeFile file("${zsStoreFile}")
+                storePassword "${zsStorePass}"
+                keyAlias "${project.findProperty('ZS_KEY_ALIAS') ?: 'zshell'}"
+                keyPassword "${project.findProperty('ZS_KEY_PASSWORD') ?: zsStorePass}"
+            } else {
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }

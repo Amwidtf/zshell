@@ -3,6 +3,7 @@ import {
   Clipboard,
   Linking,
   Modal,
+  NativeModules,
   ScrollView,
   StyleSheet,
   Switch,
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 import {
   activeSecrets,
+  base64ToBytes,
   clearMethod,
   formatBytes,
   formatPercent,
@@ -42,8 +44,15 @@ import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
 
-/** Salt RNG. Math.random is fine for salts (not key material). */
-function rng(n: number): Uint8Array {
+/** Salt RNG backed by the native SecureRandom (JS Math.random is predictable). */
+async function rng(n: number): Promise<Uint8Array> {
+  const native = NativeModules.ZShellCrypto as
+    | {secureRandomBase64(count: number): Promise<string>}
+    | undefined;
+  if (native != null) {
+    return base64ToBytes(await native.secureRandomBase64(n));
+  }
+  // Fallback for environments without the native module (tests/preview).
   const out = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     out[i] = Math.floor(Math.random() * 256);
@@ -134,16 +143,20 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
   };
 
   const finishPatternSet = (secret: string) => {
-    onSaveLock(setPattern(lock, secret, rng()));
-    setStep({kind: 'idle'});
-    setError(null);
+    rng(16).then(salt => {
+      onSaveLock(setPattern(lock, secret, salt));
+      setStep({kind: 'idle'});
+      setError(null);
+    });
   };
 
   const finishPasswordSet = (secret: string) => {
-    onSaveLock(setPassword(lock, secret, rng()));
-    setStep({kind: 'idle'});
-    setError(null);
-    setPasswordValue('');
+    rng(16).then(salt => {
+      onSaveLock(setPassword(lock, secret, salt));
+      setStep({kind: 'idle'});
+      setError(null);
+      setPasswordValue('');
+    });
   };
 
   const submitPasswordSet = () => {
@@ -202,9 +215,13 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
       return;
     }
     const {release, id} = update;
+    let cancelled = false;
     const poll = async () => {
       try {
         const items = await queryDownloads();
+        if (cancelled) {
+          return;
+        }
         const item = items.find(i => i.id === id);
         if (item == null) {
           // Removed elsewhere (e.g. cancelled in 下载管理).
@@ -229,7 +246,10 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
     };
     poll();
     const timer = setInterval(poll, 1000);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [update]);
 
   const sizeText = (bytes: number | null) =>
@@ -298,7 +318,16 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
             style={styles.rowButton}
             onPress={() => {
               setError(null);
-              setStep({kind: 'patternSet', confirmOf: null});
+              if (lock.methods.pattern != null) {
+                // Changing an existing method requires unlocking first,
+                // otherwise anyone holding the phone could swap the pattern.
+                requestVerify('更换图案', () => {
+                  setStep({kind: 'patternSet', confirmOf: null});
+                  setError(null);
+                });
+              } else {
+                setStep({kind: 'patternSet', confirmOf: null});
+              }
             }}>
             <Text style={styles.rowButtonText}>
               {lock.methods.pattern != null ? '更换' : '设置'}
@@ -332,7 +361,14 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
             onPress={() => {
               setError(null);
               setPasswordValue('');
-              setStep({kind: 'passwordSet', first: null});
+              if (lock.methods.password != null) {
+                requestVerify('更换密码', () => {
+                  setStep({kind: 'passwordSet', first: null});
+                  setError(null);
+                });
+              } else {
+                setStep({kind: 'passwordSet', first: null});
+              }
             }}>
             <Text style={styles.rowButtonText}>
               {lock.methods.password != null ? '更换' : '设置'}
@@ -362,6 +398,10 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
               <PatternPad
                 hint={error ?? '至少连接 4 个点'}
                 onComplete={dots => {
+                  if (dots.length < 4) {
+                    setError('至少连接 4 个点');
+                    return;
+                  }
                   const secret = patternToString(dots);
                   if (step.confirmOf == null) {
                     setStep({...step, confirmOf: secret});

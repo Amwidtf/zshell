@@ -84,17 +84,26 @@ export const WS_OBSERVER_PATCH_SOURCE = String.raw`(function () {
         }
       } catch (e) { /* never break the page */ }
     };
+    // Signals must come from actual JSON frames: chat text that merely
+    // contains a word like KICKED must never flip the console status.
+    function isJsonObject(data) {
+      if (typeof data !== 'string' || data.length === 0) { return false; }
+      try {
+        var parsed = JSON.parse(data);
+        return typeof parsed === 'object' && parsed !== null;
+      } catch (e) { return false; }
+    }
     function signalFromMessage(data) {
       try {
-        if (typeof data !== 'string' || data.length === 0) { return; }
-        if (data.indexOf('KICKED') !== -1) {
+        if (!isJsonObject(data)) { return; }
+        if (data.indexOf('"KICKED"') !== -1) {
           post('kicked', {});
           return;
         }
         var m = /"pair_status"\s*:\s*"([^"]+)"/.exec(data);
         if (m) { post('pair-status', { status: m[1] }); }
-        if (data.indexOf('permission_request') !== -1 ||
-            data.indexOf('elicitation_request') !== -1) {
+        if (data.indexOf('"permission_request"') !== -1 ||
+            data.indexOf('"elicitation_request"') !== -1) {
           post('approval-waiting', {});
         }
       } catch (e) { /* ignore malformed frames */ }

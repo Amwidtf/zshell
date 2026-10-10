@@ -140,6 +140,12 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     }
     ensureReceiver()
     val safeName = sanitizeFileName(fileName)
+    val parsedUrl = Uri.parse(url)
+    val scheme = parsedUrl.scheme?.lowercase()
+    if (scheme != "https" && scheme != "http") {
+      promise.reject("SCHEME", "仅支持 http/https 下载地址")
+      return
+    }
     val metas = loadMeta().toMutableList()
     if (kind == KIND_UPDATE) {
       // Replace any previous update download/file first.
@@ -148,7 +154,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       dir.listFiles()?.forEach { if (it.name.endsWith(".apk")) it.delete() }
     }
     val request = try {
-      DownloadManager.Request(Uri.parse(url))
+      DownloadManager.Request(parsedUrl)
           .setTitle(if (kind == KIND_UPDATE) "ZShell 更新" else safeName)
           .setDescription("下载完成后可在应用内打开")
           .setNotificationVisibility(
@@ -268,6 +274,20 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       }
     } catch (e: Exception) {
       promise.reject("OPEN", e.message ?: "无法打开文件", e)
+    }
+  }
+
+  /** Open the system Downloads screen (where console-file downloads live). */
+  @ReactMethod
+  fun openDownloadsUi(promise: Promise) {
+    try {
+      val intent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      reactContext.startActivity(intent)
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("DOWNLOADS_UI", e.message ?: "无法打开系统下载列表", e)
     }
   }
 
@@ -413,7 +433,10 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
 
 class ApkInstallerPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext) =
-      listOf(ApkInstallerModule(reactContext), NotificationsModule(reactContext))
+      listOf(
+          ApkInstallerModule(reactContext),
+          CryptoModule(reactContext),
+          NotificationsModule(reactContext))
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext,

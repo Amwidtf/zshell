@@ -2,7 +2,7 @@
 
 **English** | **[中文](./README.md)**
 
-![version](https://img.shields.io/badge/version-0.0.1--alpha.3-blue)
+![version](https://img.shields.io/github/v/tag/Amwidtf/zshell?label=version&color=blue)
 ![platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)
 ![react native](https://img.shields.io/badge/React%20Native-0.82-61DAFB?logo=react)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -18,6 +18,9 @@ Three ways to pair: scan the QR with the camera, paste the link, or pick a QR sc
 - **Machine management**: custom names, favorites pinned on top, manual ordering; re-pairing the same desktop merges the record and rotates credentials
 - **Encrypted storage**: pairing credentials (`sid` + `hash`) AES-encrypted at rest, keys held by Android Keystore, never in plaintext
 - **App lock**: fingerprint / face, pattern, and password can all be enabled at once — any one unlocks, so a single failed method never locks you out; auto-relock on returning from background; biometric availability detected per device
+- **Connection status & notifications**: live status strip above the console (connecting / connected / waiting for desktop / disconnected / kicked); local notifications on disconnect, kick, and approval-waiting
+- **In-app updates**: checks GitHub Releases with visible download progress, translated failure reasons, and a browser-download fallback; optional auto-check on launch (notify only, never auto-install)
+- **Download manager**: update packages and files downloaded from console pages in one list — progress, cancel, open, delete, retry
 - **Behavior patches**: document-start injection with self-retiring probes — e.g. fixes "Enter submits instead of newline" on some mobile browsers
 - **Compliance**: first-launch consent gate for the user agreement & privacy policy; a legal-document center in settings; zero data collection
 - **Details**: system back prefers in-page history before app navigation; edge-to-edge adaptation (fullscreen and Android containers); keyboard lifts input fields

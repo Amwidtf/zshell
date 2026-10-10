@@ -36,6 +36,9 @@ jobs:
           java-version: 17
           cache: gradle
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Install dependencies (workspaces + npm patches)
         run: npm install
 
@@ -49,9 +52,46 @@ jobs:
       - name: Run core-shell tests
         run: npx vitest run
 
-      - name: Build release APK
+      # Launcher icon badge per channel (α for alpha tags, β for beta tags,
+      # clean icon otherwise) so pre-release installs are easy to tell apart.
+      - name: Regenerate launcher icon with channel badge
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            *alpha*) BADGE="alpha" ;;
+            *beta*)  BADGE="beta" ;;
+            *)       BADGE="none" ;;
+          esac
+          uv run --with pillow python scripts/gen-icon.py --badge "$BADGE"
+      - name: Decode release signing key
+        env:
+          ZS_KEYSTORE_BASE64: ${{ secrets.ZS_KEYSTORE_BASE64 }}
+        run: printf '%s' "$ZS_KEYSTORE_BASE64" | base64 -d > "$HOME/zshell-release.keystore"
+
+      - name: Build release APK (signed with the private release key)
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon
+        env:
+          ZS_KEYSTORE_PASSWORD: ${{ secrets.ZS_KEYSTORE_PASSWORD }}
+          ZS_KEY_ALIAS: ${{ secrets.ZS_KEY_ALIAS }}
+          ZS_KEY_PASSWORD: ${{ secrets.ZS_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -PZS_STORE_FILE="$HOME/zshell-release.keystore" \
+            -PZS_STORE_PASSWORD="$ZS_KEYSTORE_PASSWORD" \
+            -PZS_KEY_ALIAS="$ZS_KEY_ALIAS" \
+            -PZS_KEY_PASSWORD="$ZS_KEY_PASSWORD"
+
+      # Guard: if the secrets were ever missing, gradle would silently fall
+      # back to the debug key and users could not upgrade in place.
+      - name: Verify APK is signed with the private release key
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          APK=$(ls apps/mobile/android/app/build/outputs/apk/release/ZShell-*-arm64-v8a-release.apk)
+          if ! "$APKSIGNER" verify --print-certs "$APK" | grep -q "CN=ZShell"; then
+            echo "::error::APK not signed with the private release key (secrets missing?)"
+            exit 1
+          fi
+          echo "release signature verified"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

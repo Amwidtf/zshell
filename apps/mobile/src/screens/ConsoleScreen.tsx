@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  AppState,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -91,6 +92,21 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     setStatus('connecting');
     setReloadKey(k => k + 1);
   }, []);
+
+  const statusRef = useRef<ConsoleStatus>('connecting');
+  statusRef.current = status;
+
+  // Returning to the foreground with a dead connection reloads the page
+  // right away instead of showing a stale/suspended WebView until the user
+  // taps 重连 manually.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active' && statusRef.current === 'disconnected') {
+        reload();
+      }
+    });
+    return () => sub.remove();
+  }, [reload]);
 
   const handleWebBack = useCallback(() => {
     if (canGoBackRef.current && webviewRef.current != null) {
