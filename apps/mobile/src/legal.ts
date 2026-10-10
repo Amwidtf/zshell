@@ -13,7 +13,7 @@ export interface LegalDoc {
 }
 
 /** Bump to re-prompt consent after material legal changes. */
-export const LEGAL_DOC_VERSION = 2;
+export const LEGAL_DOC_VERSION = 3;
 
 export const USER_AGREEMENT: LegalDoc = {
   title: '用户协议与免责声明',
@@ -63,8 +63,9 @@ ZShell 的隐私设计只有一条原则：零收集。本应用没有自建服�
 2. 生物识别：仅调用系统本机验证完成应用锁解锁，不接触、不存储生物特征数据；
 3. 照片：仅在你主动选择「从相册识别二维码」时读取所选单张图片，识别完成即丢弃；
 4. 网络：连接你自己的桌面端配对地址与官方远程控制台；本应用无自建服务器。
-   此外，仅当你主动点击「检查更新」时，应用会访问 GitHub（api.github.com 及其
-   下载服务）获取新版本并下载安装包——除此之外没有任何网络行为；
+   此外，应用启动时会自动访问 GitHub（api.github.com）检查新版本
+   （默认开启，可在设置中关闭），手动检查与下载更新时也会访问 GitHub
+   及其下载服务——除此之外没有任何网络行为；
 5. 安装应用：下载完成后交由系统安装器安装更新，需要你在系统里授予
    「来自此来源的应用安装」权限，安装与否始终由你确认。
 

@@ -14,9 +14,14 @@ export const notifications =
 export interface AppPrefs {
   /** Status notifications (disconnect / kicked / approval waiting). */
   notificationsEnabled: boolean;
+  /** Silent update check on app launch. */
+  autoCheckUpdates: boolean;
 }
 
-const DEFAULT_PREFS: AppPrefs = {notificationsEnabled: true};
+const DEFAULT_PREFS: AppPrefs = {
+  notificationsEnabled: true,
+  autoCheckUpdates: true,
+};
 
 export function loadPrefs(): AppPrefs {
   const raw = secureStore.getString(STORAGE_KEYS.prefs);
@@ -30,6 +35,10 @@ export function loadPrefs(): AppPrefs {
         typeof parsed.notificationsEnabled === 'boolean'
           ? parsed.notificationsEnabled
           : DEFAULT_PREFS.notificationsEnabled,
+      autoCheckUpdates:
+        typeof parsed.autoCheckUpdates === 'boolean'
+          ? parsed.autoCheckUpdates
+          : DEFAULT_PREFS.autoCheckUpdates,
     };
   } catch {
     return {...DEFAULT_PREFS};

@@ -28,7 +28,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
   override fun getName() = "ApkInstaller"
 
   @ReactMethod
-  fun downloadAndInstall(url: String, promise: Promise) {
+  fun downloadAndInstall(url: String, version: String, promise: Promise) {
     val downloadsDir =
         reactContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
     if (downloadsDir == null) {
@@ -38,6 +38,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     // Clean up previous update downloads first.
     downloadsDir.listFiles()?.forEach { if (it.name.endsWith(".apk")) it.delete() }
 
+    val fileName = "zshell-update-$version.apk"
     val dm =
         reactContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     val request = DownloadManager.Request(Uri.parse(url))
@@ -46,7 +47,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
         .setNotificationVisibility(
             DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
         .setDestinationInExternalFilesDir(
-            reactContext, Environment.DIRECTORY_DOWNLOADS, UPDATE_FILE)
+            reactContext, Environment.DIRECTORY_DOWNLOADS, fileName)
         .setAllowedOverMetered(true)
         .setAllowedOverRoaming(true)
 
@@ -69,7 +70,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("DOWNLOAD", "下载失败")
             return
           }
-          val apk = File(downloadsDir, UPDATE_FILE)
+          val apk = File(downloadsDir, fileName)
           val uri = FileProvider.getUriForFile(
               reactContext, "${reactContext.packageName}.fileprovider", apk)
           val install = Intent(Intent.ACTION_VIEW).apply {
@@ -88,8 +89,37 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
         receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
   }
 
+  /** Names (zshell-update-<version>.apk) of update APKs still on disk. */
+  @ReactMethod
+  fun listUpdateApks(promise: Promise) {
+    val dir = reactContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+    val names = dir
+        ?.listFiles()
+        ?.filter { it.name.startsWith(UPDATE_PREFIX) && it.name.endsWith(".apk") }
+        ?.map { it.name }
+        ?: emptyList<String>()
+    promise.resolve(names)
+  }
+
+  /** Delete one update APK by exact name (only in the update dir). */
+  @ReactMethod
+  fun deleteUpdateApk(name: String) {
+    try {
+      if (!name.startsWith("zshell-update-") || !name.endsWith(".apk")) {
+        return
+      }
+      val dir = reactContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return
+      val target = File(dir, name)
+      if (target.exists()) {
+        target.delete()
+      }
+    } catch (e: Exception) {
+      // cleanup is best-effort
+    }
+  }
+
   companion object {
-    private const val UPDATE_FILE = "zshell-update.apk"
+    private const val UPDATE_PREFIX = "zshell-update-"
   }
 }
 

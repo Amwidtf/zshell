@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {
   Clipboard,
   Linking,
+  Modal,
   PermissionsAndroid,
   Platform,
   ScrollView,
@@ -26,6 +27,7 @@ import {
 } from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
 import {LegalDocModal} from '../components/LegalDocModal';
+import {MarkdownText} from '../components/MarkdownText';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {AppPrefs, loadPrefs, notifications, savePrefs} from '../notifications';
 import {PatternPad} from '../PatternPad';
@@ -59,7 +61,7 @@ type UpdateState =
   | {kind: 'idle'}
   | {kind: 'checking'}
   | {kind: 'failed'}
-  | {kind: 'latest'}
+  | {kind: 'latest'; release: ReleaseInfo}
   | {kind: 'available'; release: ReleaseInfo}
   | {kind: 'downloading'; release: ReleaseInfo}
   | {kind: 'downloadFailed'; release: ReleaseInfo};
@@ -73,6 +75,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
   const [update, setUpdate] = useState<UpdateState>({kind: 'idle'});
+  const [notesRelease, setNotesRelease] = useState<ReleaseInfo | null>(null);
   const [prefs, setPrefs] = useState<AppPrefs>({notificationsEnabled: true});
   // null = unknown (still checking), true/false = granted or not.
   const [camGranted, setCamGranted] = useState<boolean | null>(null);
@@ -211,7 +214,7 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
     setUpdate(
       isNewerVersion(APP_VERSION, release)
         ? {kind: 'available', release}
-        : {kind: 'latest'},
+        : {kind: 'latest', release},
     );
   };
 
@@ -465,6 +468,23 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
             </Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.divider} />
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>启动时自动检查</Text>
+            <Text style={font.faint}>发现新版本时本地通知提醒（不自动安装）</Text>
+          </View>
+          <Switch
+            value={prefs.autoCheckUpdates}
+            onValueChange={on => {
+              const next = {...prefs, autoCheckUpdates: on};
+              setPrefs(next);
+              savePrefs(next);
+            }}
+            trackColor={{true: colors.accent}}
+            thumbColor="#ffffff"
+          />
+        </View>
 
         {update.kind === 'failed' ? (
           <Text style={styles.errorText}>
@@ -472,7 +492,16 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
           </Text>
         ) : null}
         {update.kind === 'latest' ? (
-          <Text style={[font.faint, {marginTop: 6}]}>已是最新版本。</Text>
+          <View style={{gap: 8, marginTop: 4}}>
+            <Text style={font.faint}>已是最新版本（v{update.release.version}）。</Text>
+            {/* Same-version re-download: covers republished releases. */}
+            <TouchableOpacity
+              onPress={() => startDownload(update.release)}>
+              <Text style={{color: colors.textFaint, fontSize: 13}}>
+                重新下载安装当前版本
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {update.kind === 'available' || update.kind === 'downloading' || update.kind === 'downloadFailed' ? (
           <View style={{gap: 10, marginTop: 10}}>
@@ -483,9 +512,16 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
                 : ''}
             </Text>
             {update.release.notes.length > 0 ? (
-              <Text style={font.faint} numberOfLines={6}>
-                {update.release.notes}
-              </Text>
+              <TouchableOpacity
+                onPress={() => setNotesRelease(update.release)}
+                activeOpacity={0.7}>
+                <Text style={font.faint} numberOfLines={4}>
+                  {update.release.notes}
+                </Text>
+                <Text style={{color: colors.accent, fontSize: 13, marginTop: 4}}>
+                  查看完整说明 ›
+                </Text>
+              </TouchableOpacity>
             ) : null}
             {update.kind === 'downloading' ? (
               <Text style={font.faint}>
@@ -645,6 +681,27 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
       </View>
 
       <LegalDocModal doc={openDoc} onClose={() => setOpenDoc(null)} />
+
+      {/* Full update-notes viewer (markdown-rendered CHANGELOG section). */}
+      <Modal
+        visible={notesRelease != null}
+        animationType="slide"
+        onRequestClose={() => setNotesRelease(null)}>
+        <View style={styles.notesRoot}>
+          <View style={styles.notesTopBar}>
+            <TouchableOpacity
+              onPress={() => setNotesRelease(null)}
+              style={styles.backButton}>
+              <Text style={{color: colors.accent, fontSize: 16}}>‹ 返回</Text>
+            </TouchableOpacity>
+            <Text style={font.body}>v{notesRelease?.version} 更新说明</Text>
+            <View style={{width: 64}} />
+          </View>
+          <ScrollView contentContainerStyle={{padding: 20, paddingBottom: 40}}>
+            <MarkdownText text={notesRelease?.notes ?? ''} />
+          </ScrollView>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -705,4 +762,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   legalRowText: {color: colors.accent, fontSize: 15},
+  notesRoot: {flex: 1, backgroundColor: colors.bg},
+  notesTopBar: {
+    height: 52,
+    backgroundColor: colors.bgElevated,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
 });

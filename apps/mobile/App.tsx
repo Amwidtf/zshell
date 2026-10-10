@@ -7,6 +7,7 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {AppState, BackHandler, StatusBar, View} from 'react-native';
 import {
   disabledConfig,
+  isNewer,
   LockConfig,
   MachineRecord,
   MachineRegistry,
@@ -20,6 +21,9 @@ import {ScanScreen} from './src/screens/ScanScreen';
 import {SettingsScreen} from './src/screens/SettingsScreen';
 import {loadLegalConsent, loadLockConfig, loadRegistry, saveLegalConsent, saveLockConfig, saveRegistry} from './src/storage';
 import {LEGAL_DOC_VERSION} from './src/legal';
+import {loadPrefs, notifications} from './src/notifications';
+import {fetchLatestRelease, cleanupInstalledApks} from './src/updater';
+import {APP_VERSION} from './src/version';
 
 type Screen =
   | {name: 'list'}
@@ -62,6 +66,34 @@ function App(): React.JSX.Element {
     });
     return () => sub.remove();
   }, [lock.enabled]);
+
+  // Silent update check on launch (toggle in Settings → 更新). Best-effort:
+  // a local notification when a newer release exists; failures are ignored.
+  useEffect(() => {
+    if (!consented || !unlocked || booting) {
+      return;
+    }
+    cleanupInstalledApks();
+    const prefs = loadPrefs();
+    if (!prefs.autoCheckUpdates || notifications == null) {
+      return;
+    }
+    let cancelled = false;
+    fetchLatestRelease()
+      .then(release => {
+        if (!cancelled && release != null && isNewer(APP_VERSION, release)) {
+          notifications.notify(
+            5,
+            'ZShell 发现新版本',
+            `v${release.version} 已发布，到 设置 → 更新 安装`,
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [consented, unlocked, booting]);
 
   // System back button: inside the console, prefer the page's own history
   // (web back), then pop our screen stack; at the root screen fall through
