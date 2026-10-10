@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import androidx.core.content.FileProvider
 import com.facebook.react.ReactPackage
@@ -85,8 +86,18 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
         }
       }
     }
-    reactContext.registerReceiver(
-        receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+    val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+    try {
+      // Android 13+ 强制要求显式导出标志；部分容器的 DownloadManager
+      // 广播不视为受保护系统广播，不带标志会直接抛 SecurityException。
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        reactContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+      } else {
+        reactContext.registerReceiver(receiver, filter)
+      }
+    } catch (e: Exception) {
+      promise.reject("REGISTER", "下载初始化失败：${e.message}", e)
+    }
   }
 
   /** Open a URL in a real browser (BROWSABLE category), not an app chooser. */
