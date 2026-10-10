@@ -13,7 +13,7 @@ export interface LegalDoc {
 }
 
 /** Bump to re-prompt consent after material legal changes. */
-export const LEGAL_DOC_VERSION = 3;
+export const LEGAL_DOC_VERSION = 4;
 
 export const USER_AGREEMENT: LegalDoc = {
   title: '用户协议与免责声明',
@@ -65,7 +65,8 @@ ZShell 的隐私设计只有一条原则：零收集。本应用没有自建服�
 4. 网络：连接你自己的桌面端配对地址与官方远程控制台；本应用无自建服务器。
    此外，应用启动时会自动访问 GitHub（api.github.com）检查新版本
    （默认开启，可在设置中关闭），手动检查与下载更新时也会访问 GitHub
-   及其下载服务——除此之外没有任何网络行为；
+   及其下载服务；控制台页面内你主动触发的文件下载经系统下载组件
+   完成并保存到系统公共下载目录——除此之外没有任何网络行为；
 5. 安装应用：下载完成后交由系统安装器安装更新，需要你在系统里授予
    「来自此来源的应用安装」权限，安装与否始终由你确认。
 

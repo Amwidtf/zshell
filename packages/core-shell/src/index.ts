@@ -8,3 +8,4 @@ export * from './applock';
 export * from './ports';
 export * from './update';
 export * from './console-bridge';
+export * from './format';

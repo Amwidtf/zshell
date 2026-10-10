@@ -4,7 +4,7 @@
  */
 
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {AppState, BackHandler, StatusBar, View} from 'react-native';
+import {AppState, BackHandler, StyleSheet, StatusBar, View} from 'react-native';
 import {
   disabledConfig,
   isNewer,
@@ -14,6 +14,7 @@ import {
 } from '@zshell/core-shell';
 import {ConsoleScreen} from './src/screens/ConsoleScreen';
 import {ConsentGate} from './src/screens/ConsentGate';
+import {DownloadsScreen} from './src/screens/DownloadsScreen';
 import {LockScreen} from './src/screens/LockScreen';
 import {MachineListScreen} from './src/screens/MachineListScreen';
 import {ManualInputScreen} from './src/screens/ManualInputScreen';
@@ -23,7 +24,8 @@ import {SettingsScreen} from './src/screens/SettingsScreen';
 import {loadLegalConsent, loadLockConfig, loadRegistry, saveLegalConsent, saveLockConfig, saveRegistry} from './src/storage';
 import {LEGAL_DOC_VERSION} from './src/legal';
 import {loadPrefs, notifications} from './src/notifications';
-import {fetchLatestRelease, cleanupInstalledApks} from './src/updater';
+import {cleanupInstalledApks} from './src/downloads';
+import {fetchLatestRelease} from './src/updater';
 import {APP_VERSION} from './src/version';
 
 type Screen =
@@ -32,6 +34,7 @@ type Screen =
   | {name: 'manual'}
   | {name: 'settings'}
   | {name: 'permissions'}
+  | {name: 'downloads'}
   | {name: 'console'; machineId: string};
 
 function App(): React.JSX.Element {
@@ -167,6 +170,13 @@ function App(): React.JSX.Element {
   }
 
   const top = stack[stack.length - 1];
+  // Downloads pushed from the console renders as an overlay so the WebView
+  // (and its relay session) stays mounted underneath.
+  const fromConsole =
+    stack.length >= 2 &&
+    top.name === 'downloads' &&
+    stack[stack.length - 2].name === 'console';
+  const base = fromConsole ? stack[stack.length - 2] : top;
   const push = (s: Screen) => setStack(st => [...st, s]);
   const pop = () => setStack(st => (st.length > 1 ? st.slice(0, -1) : st));
   const connectTo = (machineId: string) => {
@@ -176,7 +186,7 @@ function App(): React.JSX.Element {
   };
 
   let screen: React.JSX.Element;
-  switch (top.name) {
+  switch (base.name) {
     case 'scan':
       screen = (
         <ScanScreen
@@ -225,19 +235,24 @@ function App(): React.JSX.Element {
           }}
           onBack={pop}
           onOpenPermissions={() => push({name: 'permissions'})}
+          onOpenDownloads={() => push({name: 'downloads'})}
         />
       );
       break;
     case 'permissions':
       screen = <PermissionsScreen onBack={pop} />;
       break;
+    case 'downloads':
+      screen = <DownloadsScreen onBack={pop} />;
+      break;
     case 'console': {
-      const machine = registryRef.current?.get(top.machineId) ?? null;
+      const machine = registryRef.current?.get(base.machineId) ?? null;
       screen = machine ? (
         <ConsoleScreen
           machine={machine}
           onBack={pop}
           registerBackHandler={registerConsoleBack}
+          onOpenDownloads={() => push({name: 'downloads'})}
         />
       ) : (
         <MachineListScreen
@@ -298,8 +313,21 @@ function App(): React.JSX.Element {
     <>
       <StatusBar barStyle="light-content" backgroundColor="#161616" />
       {screen}
+      {fromConsole ? (
+        <View style={styles.overlay}>
+          <DownloadsScreen onBack={pop} />
+        </View>
+      ) : null}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#161616',
+    elevation: 8,
+  },
+});
 
 export default App;

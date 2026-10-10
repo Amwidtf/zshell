@@ -34,6 +34,8 @@ interface ConsoleScreenProps {
    * is none it falls through to the app-level back (return to machine list).
    */
   registerBackHandler: (fn: (() => boolean) | null) => void;
+  /** Opens the download manager (console-triggered downloads land there). */
+  onOpenDownloads: () => void;
 }
 
 /**
@@ -41,7 +43,7 @@ interface ConsoleScreenProps {
  * (matchMedia fix etc.) is injected before any page script runs; everything
  * else — relay WSS, pairing handshake — is done by the official page itself.
  */
-export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScreenProps) {
+export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads}: ConsoleScreenProps) {
   const webviewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -112,6 +114,9 @@ export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScr
         <Text style={styles.title} numberOfLines={1}>
           {machine.name}
         </Text>
+        <TouchableOpacity onPress={onOpenDownloads} style={styles.reloadButton}>
+          <Text style={styles.reloadText}>下载</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={reload} style={styles.reloadButton}>
           <Text style={styles.reloadText}>重连</Text>
         </TouchableOpacity>
@@ -132,6 +137,9 @@ export function ConsoleScreen({machine, onBack, registerBackHandler}: ConsoleScr
         style={styles.webview}
         containerStyle={styles.webview}
         setSupportMultipleWindows={false}
+        // File downloads inside the console are handled by the webview's own
+        // system-DownloadManager path; they land in 下载管理 (uid query).
+        downloadingMessage="已开始下载，可在 设置 → 下载管理 查看"
         onNavigationStateChange={(nav: WebViewNavigation) => {
           canGoBackRef.current = nav.canGoBack;
         }}

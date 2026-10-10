@@ -14,6 +14,8 @@ import {
 import {
   activeSecrets,
   clearMethod,
+  formatBytes,
+  formatPercent,
   isNewer as isNewerVersion,
   LockConfig,
   patternToString,
@@ -29,7 +31,13 @@ import {MarkdownText} from '../components/MarkdownText';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {AppPrefs, loadPrefs, savePrefs} from '../notifications';
 import {PatternPad} from '../PatternPad';
-import {downloadAndInstallApk, fetchLatestRelease, openInBrowser, PROJECT_PAGE} from '../updater';
+import {
+  openDownloadedFile,
+  openInBrowser,
+  queryDownloads,
+  startUpdateDownload,
+} from '../downloads';
+import {fetchLatestRelease, PROJECT_PAGE} from '../updater';
 import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
@@ -48,6 +56,7 @@ interface SettingsScreenProps {
   onSaveLock: (config: LockConfig) => void;
   onBack: () => void;
   onOpenPermissions: () => void;
+  onOpenDownloads: () => void;
 }
 
 type Step =
@@ -62,11 +71,12 @@ type UpdateState =
   | {kind: 'failed'}
   | {kind: 'latest'; release: ReleaseInfo}
   | {kind: 'available'; release: ReleaseInfo}
-  | {kind: 'downloading'; release: ReleaseInfo}
+  | {kind: 'downloading'; release: ReleaseInfo; id: number}
+  | {kind: 'downloaded'; release: ReleaseInfo; id: number}
   | {kind: 'downloadFailed'; release: ReleaseInfo; reason: string};
 
 /** Settings: multi-method lock management + update check + legal center. */
-export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: SettingsScreenProps) {
+export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onOpenDownloads}: SettingsScreenProps) {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState<string | undefined>();
   const [step, setStep] = useState<Step>({kind: 'idle'});
@@ -74,6 +84,8 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: Se
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
   const [update, setUpdate] = useState<UpdateState>({kind: 'idle'});
+  const [progress, setProgress] = useState<{bytes: number; total: number} | null>(null);
+  const [openApkError, setOpenApkError] = useState<string | null>(null);
   const [notesRelease, setNotesRelease] = useState<ReleaseInfo | null>(null);
   const [prefs, setPrefs] = useState<AppPrefs>({
     notificationsEnabled: true,
@@ -172,15 +184,53 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: Se
   };
 
   const startDownload = async (release: ReleaseInfo) => {
-    setUpdate({kind: 'downloading', release});
+    setOpenApkError(null);
+    setProgress(null);
     try {
-      await downloadAndInstallApk(release);
-      setUpdate({kind: 'idle'});
+      const id = await startUpdateDownload(release);
+      setUpdate({kind: 'downloading', release, id});
     } catch (e) {
       const reason = e instanceof Error && e.message ? e.message : '未知原因';
       setUpdate({kind: 'downloadFailed', release, reason});
     }
   };
+
+  // Poll the system download manager for the running update download; the
+  // installer itself launches natively when the file completes.
+  useEffect(() => {
+    if (update.kind !== 'downloading') {
+      return;
+    }
+    const {release, id} = update;
+    const poll = async () => {
+      try {
+        const items = await queryDownloads();
+        const item = items.find(i => i.id === id);
+        if (item == null) {
+          // Removed elsewhere (e.g. cancelled in 下载管理).
+          setUpdate({kind: 'available', release});
+          setProgress(null);
+          return;
+        }
+        if (item.status === 'successful') {
+          setUpdate({kind: 'downloaded', release, id});
+          setProgress(null);
+          return;
+        }
+        if (item.status === 'failed') {
+          setUpdate({kind: 'downloadFailed', release, reason: item.reason ?? '未知原因'});
+          setProgress(null);
+          return;
+        }
+        setProgress({bytes: item.bytesSoFar, total: item.totalBytes});
+      } catch {
+        // transient query failure — keep waiting
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 1000);
+    return () => clearInterval(timer);
+  }, [update]);
 
   const sizeText = (bytes: number | null) =>
     bytes == null ? '' : `${Math.round(bytes / 1048576)} MB`;
@@ -456,7 +506,7 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: Se
             </TouchableOpacity>
           </View>
         ) : null}
-        {update.kind === 'available' || update.kind === 'downloading' || update.kind === 'downloadFailed' ? (
+        {update.kind === 'available' || update.kind === 'downloading' || update.kind === 'downloaded' || update.kind === 'downloadFailed' ? (
           <View style={{gap: 10, marginTop: 10}}>
             <Text style={font.body}>
               新版本 v{update.release.version}
@@ -477,10 +527,55 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: Se
               </TouchableOpacity>
             ) : null}
             {update.kind === 'downloading' ? (
-              <Text style={font.faint}>
-                系统后台下载中（进度见通知栏），完成后自动弹出安装
-              </Text>
-            ) : (
+              <View style={{gap: 6}}>
+                <View style={styles.track}>
+                  <View
+                    style={[
+                      styles.fill,
+                      {
+                        width: `${
+                          progress != null && progress.total > 0
+                            ? Math.min(100, (progress.bytes / progress.total) * 100)
+                            : 0
+                        }%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={font.faint}>
+                  {progress != null && progress.total > 0
+                    ? `下载中 ${formatPercent(progress.bytes, progress.total)} · ` +
+                      `${formatBytes(progress.bytes)} / ${formatBytes(progress.total)}`
+                    : progress != null && progress.bytes > 0
+                      ? `下载中 · ${formatBytes(progress.bytes)}`
+                      : '等待开始下载…'}
+                  （进度也可在 下载管理 查看，完成后自动弹出安装）
+                </Text>
+              </View>
+            ) : null}
+            {update.kind === 'downloaded' ? (
+              <View style={{gap: 8}}>
+                <Text style={{color: colors.success, fontSize: 13}}>
+                  安装包已下载完成，安装器应已自动弹出
+                </Text>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => {
+                    setOpenApkError(null);
+                    openDownloadedFile(update.id).catch(e => {
+                      setOpenApkError(
+                        e instanceof Error && e.message ? e.message : '无法打开安装包',
+                      );
+                    });
+                  }}>
+                  <Text style={{color: '#fff', fontWeight: '600'}}>打开安装包</Text>
+                </TouchableOpacity>
+                {openApkError != null ? (
+                  <Text style={styles.errorText}>{openApkError}</Text>
+                ) : null}
+              </View>
+            ) : null}
+            {update.kind === 'available' ? (
               <TouchableOpacity
                 style={styles.primaryButton}
                 onPress={() => startDownload(update.release)}>
@@ -488,7 +583,7 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: Se
                   下载并安装
                 </Text>
               </TouchableOpacity>
-            )}
+            ) : null}
             {update.kind === 'downloadFailed' ? (
               <View style={{gap: 8}}>
                 <Text style={styles.errorText}>{update.reason}</Text>
@@ -511,6 +606,17 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: Se
           </View>
         ) : null}
       </View>
+
+      {/* ================= 下载管理（二级页面） ================= */}
+      <TouchableOpacity style={styles.card} onPress={onOpenDownloads}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>下载管理</Text>
+            <Text style={font.faint}>应用更新与控制台文件的下载进度、取消与打开</Text>
+          </View>
+          <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
+        </View>
+      </TouchableOpacity>
 
       {/* ================= 权限与通知（二级页面） ================= */}
       <TouchableOpacity style={styles.card} onPress={onOpenPermissions}>
@@ -622,6 +728,13 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
   },
+  track: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.bgInput,
+    overflow: 'hidden',
+  },
+  fill: {height: 4, borderRadius: 2, backgroundColor: colors.accent},
   errorText: {color: colors.danger, fontSize: 13},
   legalRow: {
     flexDirection: 'row',
@@ -635,6 +748,7 @@ const styles = StyleSheet.create({
   },
   legalRowText: {color: colors.accent, fontSize: 15},
   notesRoot: {flex: 1, backgroundColor: colors.bg},
+  backButton: {paddingHorizontal: 10, paddingVertical: 8},
   notesTopBar: {
     height: 52,
     backgroundColor: colors.bgElevated,
