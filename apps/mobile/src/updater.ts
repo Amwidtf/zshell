@@ -34,6 +34,7 @@ interface ApkInstallerNativeModule {
   downloadAndInstall(url: string, version: string): Promise<void>;
   listUpdateApks(): Promise<string[]>;
   deleteUpdateApk(name: string): void;
+  openUrlInBrowser(url: string): Promise<void>;
 }
 
 function installer(): ApkInstallerNativeModule {
@@ -52,6 +53,14 @@ function installer(): ApkInstallerNativeModule {
  */
 export async function downloadAndInstallApk(release: ReleaseInfo): Promise<void> {
   await installer().downloadAndInstall(release.apkUrl, release.version);
+}
+
+/**
+ * Open a URL in a real browser (native BROWSABLE intent). Avoids the
+ * "open with GitHub app" chooser that plain Linking can show.
+ */
+export async function openInBrowser(url: string): Promise<void> {
+  await installer().openUrlInBrowser(url);
 }
 
 /**

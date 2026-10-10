@@ -67,7 +67,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
         try {
           reactContext.unregisterReceiver(this)
           if (dm.getUriForDownloadedFile(downloadId) == null) {
-            promise.reject("DOWNLOAD", "下载失败")
+            promise.reject("DOWNLOAD", describeDownloadFailure(dm, downloadId))
             return
           }
           val apk = File(downloadsDir, fileName)
@@ -87,6 +87,28 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     }
     reactContext.registerReceiver(
         receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+  }
+
+  /** Open a URL in a real browser (BROWSABLE category), not an app chooser. */
+  @ReactMethod
+  fun openUrlInBrowser(url: String, promise: Promise) {
+    try {
+      val uri = Uri.parse(url)
+      val browser = Intent(Intent.ACTION_VIEW, uri).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      val resolved = reactContext.packageManager.resolveActivity(
+          browser, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+      val target = if (resolved != null) browser
+          else Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+      reactContext.startActivity(target)
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("BROWSER", e.message ?: "无法打开浏览器", e)
+    }
   }
 
   /** Names (zshell-update-<version>.apk) of update APKs still on disk. */
@@ -120,6 +142,35 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
 
   companion object {
     private const val UPDATE_PREFIX = "zshell-update-"
+
+    /** Human-readable reason for a failed DownloadManager entry. */
+    private fun describeDownloadFailure(dm: DownloadManager, id: Long): String {
+      return try {
+        val cursor = dm.query(DownloadManager.Query().setFilterById(id))
+        if (!cursor.moveToFirst()) {
+          return "下载失败（无记录）"
+        }
+        val statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+        val reasonIdx = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+        val status = if (statusIdx >= 0) cursor.getInt(statusIdx) else -1
+        val reason = if (reasonIdx >= 0) cursor.getInt(reasonIdx) else -1
+        cursor.close()
+        if (status != DownloadManager.STATUS_FAILED) {
+          return "下载失败（状态 $status）"
+        }
+        when {
+          reason in 400..599 -> "下载失败：HTTP $reason（国内网络访问 GitHub 可能需要代理）"
+          reason == DownloadManager.ERROR_FILE_ERROR -> "下载失败：文件写入错误"
+          reason == DownloadManager.ERROR_DEVICE_NOT_FOUND -> "下载失败：存储不可用"
+          reason == DownloadManager.ERROR_INSUFFICIENT_SPACE -> "下载失败：存储空间不足"
+          reason == DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "下载失败：服务器返回异常状态"
+          reason == DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "下载失败：重定向过多"
+          else -> "下载失败（原因代码 $reason）"
+        }
+      } catch (e: Exception) {
+        "下载失败"
+      }
+    }
   }
 }
 

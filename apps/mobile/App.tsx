@@ -17,6 +17,7 @@ import {ConsentGate} from './src/screens/ConsentGate';
 import {LockScreen} from './src/screens/LockScreen';
 import {MachineListScreen} from './src/screens/MachineListScreen';
 import {ManualInputScreen} from './src/screens/ManualInputScreen';
+import {PermissionsScreen} from './src/screens/PermissionsScreen';
 import {ScanScreen} from './src/screens/ScanScreen';
 import {SettingsScreen} from './src/screens/SettingsScreen';
 import {loadLegalConsent, loadLockConfig, loadRegistry, saveLegalConsent, saveLockConfig, saveRegistry} from './src/storage';
@@ -30,6 +31,7 @@ type Screen =
   | {name: 'scan'}
   | {name: 'manual'}
   | {name: 'settings'}
+  | {name: 'permissions'}
   | {name: 'console'; machineId: string};
 
 function App(): React.JSX.Element {
@@ -222,8 +224,12 @@ function App(): React.JSX.Element {
             setLock(cfg);
           }}
           onBack={pop}
+          onOpenPermissions={() => push({name: 'permissions'})}
         />
       );
+      break;
+    case 'permissions':
+      screen = <PermissionsScreen onBack={pop} />;
       break;
     case 'console': {
       const machine = registryRef.current?.get(top.machineId) ?? null;

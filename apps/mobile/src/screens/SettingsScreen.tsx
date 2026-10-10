@@ -3,8 +3,6 @@ import {
   Clipboard,
   Linking,
   Modal,
-  PermissionsAndroid,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -29,9 +27,9 @@ import {biometricAuth} from '../biometric';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {MarkdownText} from '../components/MarkdownText';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
-import {AppPrefs, loadPrefs, notifications, savePrefs} from '../notifications';
+import {AppPrefs, loadPrefs, savePrefs} from '../notifications';
 import {PatternPad} from '../PatternPad';
-import {downloadAndInstallApk, fetchLatestRelease, PROJECT_PAGE} from '../updater';
+import {downloadAndInstallApk, fetchLatestRelease, openInBrowser, PROJECT_PAGE} from '../updater';
 import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
@@ -49,6 +47,7 @@ interface SettingsScreenProps {
   lock: LockConfig;
   onSaveLock: (config: LockConfig) => void;
   onBack: () => void;
+  onOpenPermissions: () => void;
 }
 
 type Step =
@@ -64,10 +63,10 @@ type UpdateState =
   | {kind: 'latest'; release: ReleaseInfo}
   | {kind: 'available'; release: ReleaseInfo}
   | {kind: 'downloading'; release: ReleaseInfo}
-  | {kind: 'downloadFailed'; release: ReleaseInfo};
+  | {kind: 'downloadFailed'; release: ReleaseInfo; reason: string};
 
 /** Settings: multi-method lock management + update check + legal center. */
-export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) {
+export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions}: SettingsScreenProps) {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState<string | undefined>();
   const [step, setStep] = useState<Step>({kind: 'idle'});
@@ -76,60 +75,14 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
   const [openDoc, setOpenDoc] = useState<LegalDoc | null>(null);
   const [update, setUpdate] = useState<UpdateState>({kind: 'idle'});
   const [notesRelease, setNotesRelease] = useState<ReleaseInfo | null>(null);
-  const [prefs, setPrefs] = useState<AppPrefs>({notificationsEnabled: true});
-  // null = unknown (still checking), true/false = granted or not.
-  const [camGranted, setCamGranted] = useState<boolean | null>(null);
-  const [camBlocked, setCamBlocked] = useState(false);
-  const [notifGranted, setNotifGranted] = useState<boolean | null>(null);
-  const [notifBlocked, setNotifBlocked] = useState(false);
-
-  const refreshPermissions = async () => {
-    try {
-      setCamGranted(
-        await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA),
-      );
-    } catch {
-      setCamGranted(null);
-    }
-    if (Platform.OS === 'android' && Platform.Version >= 33) {
-      try {
-        setNotifGranted(
-          await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-          ),
-        );
-      } catch {
-        setNotifGranted(null);
-      }
-    } else if (notifications != null) {
-      try {
-        setNotifGranted(await notifications.areEnabled());
-      } catch {
-        setNotifGranted(null);
-      }
-    } else {
-      setNotifGranted(true);
-    }
-  };
+  const [prefs, setPrefs] = useState<AppPrefs>({
+    notificationsEnabled: true,
+    autoCheckUpdates: true,
+  });
 
   useEffect(() => {
     setPrefs(loadPrefs());
-    refreshPermissions();
   }, []);
-
-  const requestPermission = async (
-    permission: string,
-    setGranted: (v: boolean) => void,
-    setBlocked: (v: boolean) => void,
-  ) => {
-    try {
-      const result = await PermissionsAndroid.request(permission);
-      setGranted(result === PermissionsAndroid.RESULTS.GRANTED);
-      setBlocked(result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN);
-    } catch {
-      setGranted(false);
-    }
-  };
 
   useEffect(() => {
     biometricAuth.isAvailable().then(r => {
@@ -223,8 +176,9 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
     try {
       await downloadAndInstallApk(release);
       setUpdate({kind: 'idle'});
-    } catch {
-      setUpdate({kind: 'downloadFailed', release});
+    } catch (e) {
+      const reason = e instanceof Error && e.message ? e.message : '未知原因';
+      setUpdate({kind: 'downloadFailed', release, reason});
     }
   };
 
@@ -496,10 +450,9 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
             <Text style={font.faint}>已是最新版本（v{update.release.version}）。</Text>
             {/* Same-version re-download: covers republished releases. */}
             <TouchableOpacity
+              style={styles.rowButton}
               onPress={() => startDownload(update.release)}>
-              <Text style={{color: colors.textFaint, fontSize: 13}}>
-                重新下载安装当前版本
-              </Text>
+              <Text style={styles.rowButtonText}>重新下载安装当前版本</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -537,119 +490,38 @@ export function SettingsScreen({lock, onSaveLock, onBack}: SettingsScreenProps) 
               </TouchableOpacity>
             )}
             {update.kind === 'downloadFailed' ? (
-              <View style={{flexDirection: 'row', gap: 12, alignItems: 'center'}}>
-                <Text style={styles.errorText}>下载失败</Text>
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(update.release.apkUrl)}>
-                  <Text style={{color: colors.accent, fontSize: 13}}>浏览器下载</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    Clipboard.setString(update.release.apkUrl);
-                  }}>
-                  <Text style={{color: colors.accent, fontSize: 13}}>复制链接</Text>
-                </TouchableOpacity>
+              <View style={{gap: 8}}>
+                <Text style={styles.errorText}>{update.reason}</Text>
+                <View style={{flexDirection: 'row', gap: 12, alignItems: 'center'}}>
+                  <TouchableOpacity
+                    style={styles.rowButton}
+                    onPress={() => openInBrowser(update.release.apkUrl)}>
+                    <Text style={styles.rowButtonText}>浏览器下载</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.rowButton}
+                    onPress={() => {
+                      Clipboard.setString(update.release.apkUrl);
+                    }}>
+                    <Text style={styles.rowButtonText}>复制链接</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : null}
           </View>
         ) : null}
       </View>
 
-      {/* ================= 权限与通知 ================= */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>权限与通知</Text>
-
+      {/* ================= 权限与通知（二级页面） ================= */}
+      <TouchableOpacity style={styles.card} onPress={onOpenPermissions}>
         <View style={styles.row}>
           <View style={styles.rowMain}>
-            <Text style={font.body}>状态通知</Text>
-            <Text style={font.faint}>连接断开、被顶下线、等待批准时提醒</Text>
+            <Text style={font.body}>权限与通知</Text>
+            <Text style={font.faint}>相机 / 系统通知权限的检查与申请，状态通知开关</Text>
           </View>
-          <Switch
-            value={prefs.notificationsEnabled}
-            onValueChange={on => {
-              const next = {...prefs, notificationsEnabled: on};
-              setPrefs(next);
-              savePrefs(next);
-            }}
-            trackColor={{true: colors.accent}}
-            thumbColor="#ffffff"
-          />
+          <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
         </View>
-        <View style={styles.divider} />
-
-        <View style={styles.row}>
-          <View style={styles.rowMain}>
-            <Text style={font.body}>相机（扫码配对）</Text>
-            <Text style={font.faint}>
-              {camGranted == null
-                ? '检查中…'
-                : camGranted
-                  ? '已授权'
-                  : camBlocked
-                    ? '已拒绝，需到系统设置开启'
-                    : '未授权'}
-            </Text>
-          </View>
-          {camGranted !== true ? (
-            camBlocked ? (
-              <TouchableOpacity
-                style={styles.rowButton}
-                onPress={() => Linking.openSettings()}>
-                <Text style={styles.rowButtonText}>去系统设置</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.rowButton}
-                onPress={() =>
-                  requestPermission(
-                    PermissionsAndroid.PERMISSIONS.CAMERA,
-                    v => setCamGranted(v),
-                    v => setCamBlocked(v),
-                  )
-                }>
-                <Text style={styles.rowButtonText}>申请权限</Text>
-              </TouchableOpacity>
-            )
-          ) : null}
-        </View>
-        <View style={styles.divider} />
-
-        <View style={styles.row}>
-          <View style={styles.rowMain}>
-            <Text style={font.body}>系统通知（状态提醒）</Text>
-            <Text style={font.faint}>
-              {notifGranted == null
-                ? '检查中…'
-                : notifGranted
-                  ? '已授权'
-                  : notifBlocked
-                    ? '已拒绝，需到系统设置开启'
-                    : '未授权'}
-            </Text>
-          </View>
-          {notifGranted !== true ? (
-            notifBlocked ? (
-              <TouchableOpacity
-                style={styles.rowButton}
-                onPress={() => Linking.openSettings()}>
-                <Text style={styles.rowButtonText}>去系统设置</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.rowButton}
-                onPress={() =>
-                  requestPermission(
-                    PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-                    v => setNotifGranted(v),
-                    v => setNotifBlocked(v),
-                  )
-                }>
-                <Text style={styles.rowButtonText}>申请权限</Text>
-              </TouchableOpacity>
-            )
-          ) : null}
-        </View>
-      </View>
+      </TouchableOpacity>
 
       {/* ================= 法律与关于 ================= */}
       <View style={styles.card}>
