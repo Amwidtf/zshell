@@ -49,6 +49,8 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
   const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [status, setStatus] = useState<ConsoleStatus>('connecting');
+  // True while the WebView's own load has failed (error page visible).
+  const [loadFailed, setLoadFailed] = useState(false);
   const prefsRef = useRef(loadPrefs());
   const url = useMemo(() => buildConsoleUrl(machine.credentials), [machine]);
 
@@ -90,18 +92,26 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
 
   const reload = useCallback(() => {
     setStatus('connecting');
+    setLoadFailed(false);
     setReloadKey(k => k + 1);
   }, []);
 
   const statusRef = useRef<ConsoleStatus>('connecting');
   statusRef.current = status;
+  const loadFailedRef = useRef(false);
+  loadFailedRef.current = loadFailed;
 
-  // Returning to the foreground with a dead connection reloads the page
-  // right away instead of showing a stale/suspended WebView until the user
-  // taps 重连 manually.
+  // Returning to the foreground with a dead connection or a failed page load
+  // reloads right away — the OS often kills the WebView renderer in the
+  // background, and the resume-time reload can hit a network that is not
+  // ready yet (error -1). Retrying automatically once the app is actually
+  // visible fixes both instead of leaving a dead error page.
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (state === 'active' && statusRef.current === 'disconnected') {
+      if (
+        state === 'active' &&
+        (statusRef.current === 'disconnected' || loadFailedRef.current)
+      ) {
         reload();
       }
     });
@@ -159,10 +169,16 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         onNavigationStateChange={(nav: WebViewNavigation) => {
           canGoBackRef.current = nav.canGoBack;
         }}
+        onLoadStart={() => setLoadFailed(false)}
+        onError={() => setLoadFailed(true)}
+        // The OS may kill the WebView renderer while backgrounded; rebuild
+        // the page instead of leaving a dead surface.
+        onRenderProcessGone={() => reload()}
         onMessage={handleBridgeMessage}
-        renderError={code => (
+        renderError={() => (
           <View style={styles.errorBox}>
-            <Text style={font.dim}>页面加载失败（{code}）</Text>
+            <Text style={font.dim}>控制台加载失败，多半是网络未就绪或连接中断</Text>
+            <Text style={font.faint}>回到前台会自动重试，也可以现在手动重试</Text>
             <TouchableOpacity style={styles.retryButton} onPress={reload}>
               <Text style={{color: '#fff'}}>重试</Text>
             </TouchableOpacity>
