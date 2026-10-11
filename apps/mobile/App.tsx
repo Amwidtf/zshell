@@ -14,6 +14,7 @@ import {
 } from '@zshell/core-shell';
 import {ConsoleScreen} from './src/screens/ConsoleScreen';
 import {ConsentGate} from './src/screens/ConsentGate';
+import {DiagnosticsScreen} from './src/screens/DiagnosticsScreen';
 import {DownloadsScreen} from './src/screens/DownloadsScreen';
 import {LockScreen} from './src/screens/LockScreen';
 import {MachineListScreen} from './src/screens/MachineListScreen';
@@ -35,6 +36,7 @@ type Screen =
   | {name: 'settings'}
   | {name: 'permissions'}
   | {name: 'downloads'}
+  | {name: 'diagnostics'}
   | {name: 'console'; machineId: string};
 
 function App(): React.JSX.Element {
@@ -85,7 +87,7 @@ function App(): React.JSX.Element {
       return;
     }
     let cancelled = false;
-    fetchLatestRelease()
+    fetchLatestRelease(loadPrefs().updateChannel)
       .then(release => {
         if (!cancelled && release != null && isNewer(APP_VERSION, release)) {
           notifications.notify(
@@ -234,9 +236,17 @@ function App(): React.JSX.Element {
             saveLockConfig(cfg);
             setLock(cfg);
           }}
+          machines={machines}
+          onImportMachines={records => {
+            const registry = registryRef.current!;
+            const result = registry.importMachines(records);
+            persist();
+            return result;
+          }}
           onBack={pop}
           onOpenPermissions={() => push({name: 'permissions'})}
           onOpenDownloads={() => push({name: 'downloads'})}
+          onOpenDiagnostics={() => push({name: 'diagnostics'})}
         />
       );
       break;
@@ -245,6 +255,9 @@ function App(): React.JSX.Element {
       break;
     case 'downloads':
       screen = <DownloadsScreen onBack={pop} />;
+      break;
+    case 'diagnostics':
+      screen = <DiagnosticsScreen onBack={pop} />;
       break;
     case 'console': {
       const machine = registryRef.current?.get(base.machineId) ?? null;
@@ -274,6 +287,10 @@ function App(): React.JSX.Element {
             registryRef.current?.move(id, dir);
             persist();
           }}
+          onSetMuted={(id, muted) => {
+            registryRef.current?.setMuted(id, muted);
+            persist();
+          }}
           onDelete={id => {
             registryRef.current?.remove(id);
             persist();
@@ -300,6 +317,10 @@ function App(): React.JSX.Element {
           }}
           onMove={(id, dir) => {
             registryRef.current?.move(id, dir);
+            persist();
+          }}
+          onSetMuted={(id, muted) => {
+            registryRef.current?.setMuted(id, muted);
             persist();
           }}
           onDelete={id => {

@@ -32,6 +32,7 @@ interface DownloadsNativeModule {
   listUpdateApks(): Promise<string[]>;
   deleteUpdateApk(name: string): void;
   openUrlInBrowser(url: string): Promise<void>;
+  shareTextFile(fileName: string, text: string): Promise<void>;
 }
 
 function module(): DownloadsNativeModule {
@@ -71,6 +72,11 @@ export function openDownloadedFile(id: number): Promise<void> {
 /** Jump to the system Downloads screen (console files live in public Downloads). */
 export function openDownloadsUi(): Promise<void> {
   return module().openDownloadsUi();
+}
+
+/** Offer a text blob as a shared file (encrypted backups). */
+export function shareTextFile(fileName: string, text: string): Promise<void> {
+  return module().shareTextFile(fileName, text);
 }
 
 export function isActive(status: DownloadStatus): boolean {

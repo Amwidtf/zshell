@@ -9,3 +9,6 @@ export * from './ports';
 export * from './update';
 export * from './console-bridge';
 export * from './format';
+export * from './backup';
+export * from './diagnostics';
+export * from './quiet';

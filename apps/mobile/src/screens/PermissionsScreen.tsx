@@ -7,9 +7,11 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import {parseClock} from '@zshell/core-shell';
 import {notifications, AppPrefs, loadPrefs, savePrefs} from '../notifications';
 import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
@@ -24,7 +26,7 @@ interface PermissionsScreenProps {
  * own screen so the settings page stays short as permissions grow.
  */
 export function PermissionsScreen({onBack}: PermissionsScreenProps) {
-  const [prefs, setPrefs] = useState<AppPrefs>({notificationsEnabled: true});
+  const [prefs, setPrefs] = useState<AppPrefs>(() => loadPrefs());
   // null = still checking, true/false = granted or not.
   const [camGranted, setCamGranted] = useState<boolean | null>(null);
   const [camBlocked, setCamBlocked] = useState(false);
@@ -135,6 +137,65 @@ export function PermissionsScreen({onBack}: PermissionsScreenProps) {
             )
           ) : null}
         </View>
+        <View style={styles.divider} />
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>免打扰时段</Text>
+            <Text style={font.faint}>
+              时段内只提醒「等待批准」和「被顶下线」，断线、新版本静默
+            </Text>
+          </View>
+          <Switch
+            value={prefs.quietHours.enabled}
+            onValueChange={on => {
+              const next = {
+                ...prefs,
+                quietHours: {...prefs.quietHours, enabled: on},
+              };
+              setPrefs(next);
+              savePrefs(next);
+            }}
+            trackColor={{true: colors.accent}}
+            thumbColor="#ffffff"
+          />
+        </View>
+        {prefs.quietHours.enabled ? (
+          <View style={{flexDirection: 'row', gap: 10, alignItems: 'center'}}>
+            {(['start', 'end'] as const).map((field, i) => (
+              <React.Fragment key={field}>
+                {i === 1 ? (
+                  <Text style={{color: colors.textDim, fontSize: 13}}>至</Text>
+                ) : null}
+                <TextInput
+                  style={styles.clockInput}
+                  value={prefs.quietHours[field]}
+                  placeholder="22:00"
+                  placeholderTextColor={colors.textFaint}
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={5}
+                  onChangeText={text => {
+                    const next = {
+                      ...prefs,
+                      quietHours: {...prefs.quietHours, [field]: text},
+                    };
+                    setPrefs(next);
+                    if (parseClock(text) != null) {
+                      savePrefs(next);
+                    }
+                  }}
+                />
+              </React.Fragment>
+            ))}
+            <Text style={font.faint}>（次日）可跨零点</Text>
+          </View>
+        ) : null}
+        {prefs.quietHours.enabled &&
+        (parseClock(prefs.quietHours.start) == null ||
+          parseClock(prefs.quietHours.end) == null) ? (
+          <Text style={{color: colors.danger, fontSize: 13}}>
+            时间格式为 HH:MM（如 22:00），输入正确后自动保存
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.card}>
@@ -199,6 +260,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   rowButtonText: {color: colors.textDim, fontSize: 13},
+  clockInput: {
+    backgroundColor: colors.bgInput,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    width: 84,
+    color: colors.text,
+    fontSize: 15,
+    textAlign: 'center',
+  },
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,

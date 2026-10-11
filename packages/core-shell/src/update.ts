@@ -77,6 +77,11 @@ export function isNewer(current: string, release: ReleaseInfo): boolean {
   return compareVersions(release.version, current) > 0;
 }
 
+/** True when the version carries an alpha/beta/rc pre-release suffix. */
+export function isPrerelease(version: string): boolean {
+  return /-(alpha|beta|rc)\./i.test(version.trim().replace(/^v/i, ''));
+}
+
 /**
  * Pick the best APK asset for a phone: arm64-v8a build when present, else the
  * universal APK, else any APK (ABI split releases upload several files).

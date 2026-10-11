@@ -13,7 +13,7 @@ export interface LegalDoc {
 }
 
 /** Bump to re-prompt consent after material legal changes. */
-export const LEGAL_DOC_VERSION = 4;
+export const LEGAL_DOC_VERSION = 5;
 
 export const USER_AGREEMENT: LegalDoc = {
   title: '用户协议与免责声明',
@@ -56,7 +56,9 @@ ZShell 的隐私设计只有一条原则：零收集。本应用没有自建服�
 二、本地存储的数据（永不离开你的设备）
 1. 机器列表：已配对桌面端的名称、地址、凭据（sid/hash）、收藏与排序 —— AES 加密存储（MMKV），加密密钥由 Android Keystore 托管；
 2. 应用锁设置：锁定方式与 PBKDF2 验证器（盐 + 哈希，不存明文密码或图案）；
-3. 以上数据卸载应用或清除应用数据即彻底删除。
+3. 连接诊断记录：最近 200 条连接事件（不含凭据与会话内容），仅存本机，仅在你主动复制时离开设备；
+4. 你导出的配对备份由你设置的口令加密，应用不保存口令、也无法解密你不小心丢失口令的备份；
+5. 以上数据卸载应用或清除应用数据即彻底删除。
 
 三、权限用途
 1. 相机：仅用于扫描配对二维码，不拍照、不录像、不保存图像；

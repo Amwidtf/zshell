@@ -20,6 +20,7 @@ interface MachineListScreenProps {
   onRename: (id: string, name: string) => void;
   onToggleFavorite: (id: string) => void;
   onMove: (id: string, direction: -1 | 1) => void;
+  onSetMuted: (id: string, muted: boolean) => void;
   onDelete: (id: string) => void;
 }
 
@@ -92,6 +93,7 @@ export function MachineListScreen(props: MachineListScreenProps) {
                   <View style={{flex: 1}}>
                     <Text style={font.body} numberOfLines={1}>
                       {item.name}
+                      {item.muted ? ' 🔇' : ''}
                     </Text>
                     <Text style={font.faint} numberOfLines={1}>
                       {hostOf(item)} · sid …{item.credentials.sid.slice(-6)}
@@ -129,6 +131,13 @@ export function MachineListScreen(props: MachineListScreenProps) {
                         style={styles.smallButton}
                         onPress={() => props.onMove(item.id, 1)}>
                         <Text style={styles.smallButtonText}>↓ 下移</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.smallButton}
+                        onPress={() => props.onSetMuted(item.id, !item.muted)}>
+                        <Text style={styles.smallButtonText}>
+                          {item.muted ? '🔕 取消静音' : '🔕 静音通知'}
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[

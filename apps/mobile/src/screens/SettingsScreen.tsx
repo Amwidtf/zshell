@@ -16,10 +16,13 @@ import {
   activeSecrets,
   base64ToBytes,
   clearMethod,
+  decryptBackup,
+  encryptBackup,
   formatBytes,
   formatPercent,
   isNewer as isNewerVersion,
   LockConfig,
+  MachineRecord,
   patternToString,
   ReleaseInfo,
   setPassword,
@@ -37,9 +40,11 @@ import {
   openDownloadedFile,
   openInBrowser,
   queryDownloads,
+  shareTextFile,
   startUpdateDownload,
 } from '../downloads';
 import {fetchLatestRelease, PROJECT_PAGE} from '../updater';
+import type {UpdateChannel} from '../notifications';
 import {biometricLabel} from './LockScreen';
 import {colors, font} from '../theme';
 import {APP_VERSION} from '../version';
@@ -63,9 +68,14 @@ async function rng(n: number): Promise<Uint8Array> {
 interface SettingsScreenProps {
   lock: LockConfig;
   onSaveLock: (config: LockConfig) => void;
+  machines: MachineRecord[];
+  onImportMachines: (
+    records: unknown,
+  ) => {added: number; updated: number};
   onBack: () => void;
   onOpenPermissions: () => void;
   onOpenDownloads: () => void;
+  onOpenDiagnostics: () => void;
 }
 
 type Step =
@@ -85,7 +95,16 @@ type UpdateState =
   | {kind: 'downloadFailed'; release: ReleaseInfo; reason: string};
 
 /** Settings: multi-method lock management + update check + legal center. */
-export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onOpenDownloads}: SettingsScreenProps) {
+export function SettingsScreen({
+  lock,
+  onSaveLock,
+  machines,
+  onImportMachines,
+  onBack,
+  onOpenPermissions,
+  onOpenDownloads,
+  onOpenDiagnostics,
+}: SettingsScreenProps) {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState<string | undefined>();
   const [step, setStep] = useState<Step>({kind: 'idle'});
@@ -99,7 +118,20 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
   const [prefs, setPrefs] = useState<AppPrefs>({
     notificationsEnabled: true,
     autoCheckUpdates: true,
+    updateChannel: 'stable',
+    quietHours: {enabled: false, start: '22:00', end: '08:00'},
   });
+
+  // ---------- backup & restore ----------
+
+  /** null = idle; 'export' / 'restore' shown after lock verification. */
+  const [backupMode, setBackupMode] = useState<'export' | 'restore' | null>(null);
+  const [backupPass, setBackupPass] = useState('');
+  const [backupPass2, setBackupPass2] = useState('');
+  const [restoreBlob, setRestoreBlob] = useState('');
+  const [restorePass, setRestorePass] = useState('');
+  const [backupBlob, setBackupBlob] = useState<string | null>(null);
+  const [restoreResult, setRestoreResult] = useState<string | null>(null);
 
   useEffect(() => {
     setPrefs(loadPrefs());
@@ -184,7 +216,7 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
 
   const checkUpdate = async () => {
     setUpdate({kind: 'checking'});
-    const release = await fetchLatestRelease();
+    const release = await fetchLatestRelease(prefs.updateChannel);
     if (release == null) {
       setUpdate({kind: 'failed'});
       return;
@@ -194,6 +226,57 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
         ? {kind: 'available', release}
         : {kind: 'latest', release},
     );
+  };
+
+  const doExportBackup = async () => {
+    setError(null);
+    if (backupPass.length < 6) {
+      setError('备份口令至少 6 位');
+      return;
+    }
+    if (backupPass !== backupPass2) {
+      setError('两次口令不一致');
+      return;
+    }
+    if (machines.length === 0) {
+      setError('还没有配对的机器，无需备份');
+      return;
+    }
+    const payload = JSON.stringify({
+      format: 'zshell-machines',
+      v: 1,
+      exportedAt: Date.now(),
+      machines,
+    });
+    const blob = encryptBackup(payload, backupPass, await rng(16));
+    setBackupBlob(blob);
+    setBackupPass('');
+    setBackupPass2('');
+  };
+
+  const doRestoreBackup = () => {
+    setError(null);
+    setRestoreResult(null);
+    const json = decryptBackup(restoreBlob.trim(), restorePass);
+    if (json == null) {
+      setError('解密失败：口令不对，或备份内容损坏');
+      return;
+    }
+    let parsed: {format?: unknown; machines?: unknown};
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      setError('备份内容无效');
+      return;
+    }
+    if (parsed.format !== 'zshell-machines' || !Array.isArray(parsed.machines)) {
+      setError('这不是 ZShell 的配对备份');
+      return;
+    }
+    const r = onImportMachines(parsed.machines);
+    setRestoreResult(`恢复完成：新增 ${r.added} 台，更新凭据 ${r.updated} 台`);
+    setRestoreBlob('');
+    setRestorePass('');
   };
 
   const startDownload = async (release: ReleaseInfo) => {
@@ -495,6 +578,120 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
         ) : null}
       </View>
 
+      {/* ================= 备份与恢复 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>备份与恢复</Text>
+        <Text style={font.faint}>
+          把配对记录加密成一段文本，换机或重装后可恢复；口令丢失无法找回
+        </Text>
+        {backupMode == null ? (
+          <View style={{flexDirection: 'row', gap: 10, marginTop: 2}}>
+            <TouchableOpacity
+              style={styles.rowButton}
+              onPress={() => {
+                setError(null);
+                setRestoreResult(null);
+                if (lock.enabled) {
+                  requestVerify('导出备份', () => setBackupMode('export'));
+                } else {
+                  setBackupMode('export');
+                }
+              }}>
+              <Text style={styles.rowButtonText}>导出备份</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.rowButton}
+              onPress={() => {
+                setError(null);
+                setRestoreResult(null);
+                if (lock.enabled) {
+                  requestVerify('恢复备份', () => setBackupMode('restore'));
+                } else {
+                  setBackupMode('restore');
+                }
+              }}>
+              <Text style={styles.rowButtonText}>从备份恢复</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {backupMode === 'export' ? (
+          <View style={{gap: 10, marginTop: 4}}>
+            <Text style={font.dim}>
+              设置备份口令（至少 6 位，只用于加密，应用本身不保存它）
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="备份口令"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              value={backupPass}
+              onChangeText={setBackupPass}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="再输入一次"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              value={backupPass2}
+              onChangeText={setBackupPass2}
+            />
+            <TouchableOpacity style={styles.primaryButton} onPress={doExportBackup}>
+              <Text style={{color: '#fff', fontWeight: '600'}}>生成备份</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{alignItems: 'center'}}
+              onPress={() => {
+                setBackupMode(null);
+                setError(null);
+                setBackupPass('');
+                setBackupPass2('');
+              }}>
+              <Text style={{color: colors.textDim, fontSize: 13}}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {backupMode === 'restore' ? (
+          <View style={{gap: 10, marginTop: 4}}>
+            <Text style={font.dim}>粘贴之前导出的备份文本（ZSBK1. 开头）</Text>
+            <TextInput
+              style={[styles.input, {height: 88, textAlignVertical: 'top'}]}
+              placeholder="ZSBK1.……"
+              placeholderTextColor={colors.textFaint}
+              multiline
+              value={restoreBlob}
+              onChangeText={setRestoreBlob}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="备份口令"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              value={restorePass}
+              onChangeText={setRestorePass}
+            />
+            <TouchableOpacity style={styles.primaryButton} onPress={doRestoreBackup}>
+              <Text style={{color: '#fff', fontWeight: '600'}}>恢复</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{alignItems: 'center'}}
+              onPress={() => {
+                setBackupMode(null);
+                setError(null);
+                setRestoreBlob('');
+                setRestorePass('');
+              }}>
+              <Text style={{color: colors.textDim, fontSize: 13}}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {restoreResult != null ? (
+          <Text style={{color: colors.success, fontSize: 13}}>{restoreResult}</Text>
+        ) : null}
+        {error != null && backupMode != null ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : null}
+      </View>
+
       {/* ================= 更新 ================= */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>更新</Text>
@@ -528,6 +725,40 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
             trackColor={{true: colors.accent}}
             thumbColor="#ffffff"
           />
+        </View>
+
+        <View style={styles.divider} />
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>更新频道</Text>
+            <Text style={font.faint}>尝鲜版包含 alpha / beta 预发布</Text>
+          </View>
+          <View style={{flexDirection: 'row', gap: 8}}>
+            {(['stable', 'beta'] as UpdateChannel[]).map(ch => {
+              const active = prefs.updateChannel === ch;
+              return (
+                <TouchableOpacity
+                  key={ch}
+                  style={[
+                    styles.rowButton,
+                    active && {borderWidth: 1, borderColor: colors.accent},
+                  ]}
+                  onPress={() => {
+                    const next = {...prefs, updateChannel: ch};
+                    setPrefs(next);
+                    savePrefs(next);
+                  }}>
+                  <Text
+                    style={[
+                      styles.rowButtonText,
+                      active && {color: colors.accent},
+                    ]}>
+                    {ch === 'stable' ? '稳定版' : '尝鲜版'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {update.kind === 'failed' ? (
@@ -669,6 +900,17 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
         </View>
       </TouchableOpacity>
 
+      {/* ================= 诊断（二级页面） ================= */}
+      <TouchableOpacity style={styles.card} onPress={onOpenDiagnostics}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>连接诊断</Text>
+            <Text style={font.faint}>最近的连接事件时间线，反馈问题时可导出</Text>
+          </View>
+          <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
+        </View>
+      </TouchableOpacity>
+
       {/* ================= 法律与关于 ================= */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>法律与关于</Text>
@@ -699,6 +941,53 @@ export function SettingsScreen({lock, onSaveLock, onBack, onOpenPermissions, onO
       </View>
 
       <LegalDocModal doc={openDoc} onClose={() => setOpenDoc(null)} />
+
+      {/* Backup result viewer (encrypted blob: copy or save as a file). */}
+      <Modal
+        visible={backupBlob != null}
+        animationType="slide"
+        onRequestClose={() => setBackupBlob(null)}>
+        <View style={styles.notesRoot}>
+          <View style={styles.notesTopBar}>
+            <TouchableOpacity
+              onPress={() => setBackupBlob(null)}
+              style={styles.backButton}>
+              <Text style={{color: colors.accent, fontSize: 16}}>‹ 完成</Text>
+            </TouchableOpacity>
+            <Text style={font.body}>配对备份</Text>
+            <View style={{width: 64}} />
+          </View>
+          <ScrollView contentContainerStyle={{padding: 20, gap: 14}}>
+            <Text style={font.faint}>
+              这段文本包含全部配对记录（已用口令加密）。保存到你的收藏、网盘或
+              备忘录均可；口令和文本缺一不可，口令丢失无法找回。
+            </Text>
+            <Text style={styles.blobText} selectable>
+              {backupBlob}
+            </Text>
+            <View style={{flexDirection: 'row', gap: 10}}>
+              <TouchableOpacity
+                style={styles.rowButton}
+                onPress={() => {
+                  if (backupBlob != null) {
+                    Clipboard.setString(backupBlob);
+                  }
+                }}>
+                <Text style={styles.rowButtonText}>复制文本</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.rowButton}
+                onPress={() => {
+                  if (backupBlob != null) {
+                    shareTextFile('zshell-backup.txt', backupBlob).catch(() => {});
+                  }
+                }}>
+                <Text style={styles.rowButtonText}>保存 / 分享为文件</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* Full update-notes viewer (markdown-rendered CHANGELOG section). */}
       <Modal
@@ -789,6 +1078,12 @@ const styles = StyleSheet.create({
   legalRowText: {color: colors.accent, fontSize: 15},
   notesRoot: {flex: 1, backgroundColor: colors.bg},
   backButton: {paddingHorizontal: 10, paddingVertical: 8},
+  blobText: {
+    color: colors.textDim,
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: 'monospace',
+  },
   notesTopBar: {
     height: 52,
     backgroundColor: colors.bgElevated,

@@ -6,15 +6,24 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {WebView, WebViewNavigation, WebViewMessageEvent} from 'react-native-webview';
+import {
+  WebView,
+  WebViewErrorEvent,
+  WebViewNavigation,
+  WebViewMessageEvent,
+} from 'react-native-webview';
 import {
   buildConsoleUrl,
+  ConsoleEvent,
   ConsoleStatus,
   deriveConsoleStatus,
   MachineRecord,
+  parseClock,
   parseConsoleEvent,
+  withinQuietHours,
 } from '@zshell/core-shell';
 import {buildPatchSource} from '@zshell/patch-bundle';
+import {logDiag} from '../diagnostics';
 import {loadPrefs, notifications} from '../notifications';
 import {colors, font} from '../theme';
 
@@ -58,12 +67,42 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     prefsRef.current = loadPrefs();
   }, []);
 
-  const notify = useCallback((id: number, title: string, body: string) => {
-    if (!prefsRef.current.notificationsEnabled || notifications == null) {
-      return;
+  const notify = useCallback(
+    (
+      id: number,
+      kind: 'approval' | 'security' | 'info',
+      title: string,
+      body: string,
+    ) => {
+      const prefs = prefsRef.current;
+      if (!prefs.notificationsEnabled || machine.muted || notifications == null) {
+        return;
+      }
+      if (kind === 'info' && prefs.quietHours.enabled) {
+        const now = new Date();
+        const start = parseClock(prefs.quietHours.start);
+        const end = parseClock(prefs.quietHours.end);
+        if (
+          start != null &&
+          end != null &&
+          withinQuietHours(now.getHours() * 60 + now.getMinutes(), start, end)
+        ) {
+          return; // quiet hours mute informational pings only
+        }
+      }
+      notifications.notify(id, title, body);
+    },
+    [machine.muted],
+  );
+
+  const diagDetail = (event: ConsoleEvent): string | undefined => {
+    const d = event.detail;
+    if (d == null || typeof d !== 'object') {
+      return undefined;
     }
-    notifications.notify(id, title, body);
-  }, []);
+    const text = JSON.stringify(d);
+    return text.length > 60 ? text.slice(0, 60) + '…' : text;
+  };
 
   const handleBridgeMessage = useCallback(
     (event: WebViewMessageEvent) => {
@@ -71,17 +110,18 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
       if (bridgeEvent == null) {
         return;
       }
+      logDiag(bridgeEvent.type, diagDetail(bridgeEvent));
       if (bridgeEvent.type === 'approval-waiting') {
-        notify(2, 'ZCode · 等待你的批准', 'Agent 请求执行操作，点开应用处理');
+        notify(2, 'approval', 'ZCode · 等待你的批准', 'Agent 请求执行操作，点开应用处理');
         return;
       }
       setStatus(prev => {
         const next = deriveConsoleStatus(prev, bridgeEvent);
         if (next !== prev) {
           if (next === 'kicked') {
-            notify(3, '会话已在其他设备连接', '如需夺回请点开应用重连');
+            notify(3, 'security', '会话已在其他设备连接', '如需夺回请点开应用重连');
           } else if (next === 'disconnected' && prev === 'connected') {
-            notify(4, '连接已断开', '正在自动重连，可点开应用查看');
+            notify(4, 'info', '连接已断开', '正在自动重连，可点开应用查看');
           }
         }
         return next;
@@ -91,6 +131,7 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
   );
 
   const reload = useCallback(() => {
+    logDiag('page-reload');
     setStatus('connecting');
     setLoadFailed(false);
     setReloadKey(k => k + 1);
@@ -101,6 +142,10 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
   const loadFailedRef = useRef(false);
   loadFailedRef.current = loadFailed;
 
+  useEffect(() => {
+    logDiag('console-open', machine.name);
+  }, [machine.name]);
+
   // Returning to the foreground with a dead connection or a failed page load
   // reloads right away — the OS often kills the WebView renderer in the
   // background, and the resume-time reload can hit a network that is not
@@ -108,10 +153,12 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
   // visible fixes both instead of leaving a dead error page.
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (
-        state === 'active' &&
-        (statusRef.current === 'disconnected' || loadFailedRef.current)
-      ) {
+      if (state !== 'active') {
+        return;
+      }
+      logDiag('app-active', statusRef.current);
+      if (statusRef.current === 'disconnected' || loadFailedRef.current) {
+        logDiag('auto-reload');
         reload();
       }
     });
@@ -169,8 +216,14 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         onNavigationStateChange={(nav: WebViewNavigation) => {
           canGoBackRef.current = nav.canGoBack;
         }}
-        onLoadStart={() => setLoadFailed(false)}
-        onError={() => setLoadFailed(true)}
+        onLoadStart={() => {
+          setLoadFailed(false);
+          logDiag('page-load-start');
+        }}
+        onError={(e: WebViewErrorEvent) => {
+          setLoadFailed(true);
+          logDiag('load-error', e.nativeEvent.description?.slice(0, 60));
+        }}
         // The OS may kill the WebView renderer while backgrounded; rebuild
         // the page instead of leaving a dead surface.
         onRenderProcessGone={() => reload()}

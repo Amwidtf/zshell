@@ -277,6 +277,34 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
+  /** Write text to a cache file and offer it via the system share sheet
+   * (used for encrypted backups). */
+  @ReactMethod
+  fun shareTextFile(fileName: String, text: String, promise: Promise) {
+    try {
+      val safeName = sanitizeFileName(fileName).ifEmpty { "zshell-backup.txt" }
+      val shareDir = File(reactContext.cacheDir, "share")
+      shareDir.mkdirs()
+      val target = File(shareDir, safeName)
+      target.writeText(text, Charsets.UTF_8)
+      val uri =
+          FileProvider.getUriForFile(
+              reactContext, "${reactContext.packageName}.fileprovider", target)
+      val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      reactContext.startActivity(Intent.createChooser(send, null).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      })
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("SHARE", e.message ?: "无法分享文件", e)
+    }
+  }
+
   /** Open the system Downloads screen (where console-file downloads live). */
   @ReactMethod
   fun openDownloadsUi(promise: Promise) {

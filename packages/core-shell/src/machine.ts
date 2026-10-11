@@ -15,6 +15,8 @@ export interface MachineRecord {
   sortOrder: number;
   createdAt: number;
   lastUsedAt: number | null;
+  /** Per-machine notification mute (older backups may lack this field). */
+  muted?: boolean;
 }
 
 export interface MachineRegistryData {
@@ -135,6 +137,16 @@ export class MachineRegistry {
     return true;
   }
 
+  /** Mute/unmute status notifications for one machine. */
+  setMuted(id: string, muted: boolean): boolean {
+    const m = this.data.machines.find(x => x.id === id);
+    if (m == null) {
+      return false;
+    }
+    m.muted = muted;
+    return true;
+  }
+
   /** Move a machine up (-1) or down (+1) within its favorite group. */
   move(id: string, direction: -1 | 1): boolean {
     const target = this.data.machines.find(x => x.id === id);
@@ -166,6 +178,54 @@ export class MachineRegistry {
     const before = this.data.machines.length;
     this.data.machines = this.data.machines.filter(m => m.id !== id);
     return this.data.machines.length < before;
+  }
+
+  /**
+   * Merge machines from a decrypted backup. Match key is sid+origin: an
+   * existing machine keeps its local name/favorite/order and only gets its
+   * credentials refreshed; unknown machines are appended with fresh ids.
+   */
+  importMachines(records: unknown): {added: number; updated: number} {
+    const result = {added: 0, updated: 0};
+    if (!Array.isArray(records)) {
+      return result;
+    }
+    for (const r of records) {
+      if (r == null || typeof r !== 'object') {
+        continue;
+      }
+      const rec = r as Partial<MachineRecord>;
+      const creds = rec.credentials;
+      if (
+        typeof rec.name !== 'string' ||
+        creds == null ||
+        typeof creds.sid !== 'string' ||
+        typeof creds.hash !== 'string' ||
+        typeof creds.origin !== 'string'
+      ) {
+        continue;
+      }
+      const existing = this.data.machines.find(
+        m => m.credentials.sid === creds.sid && m.credentials.origin === creds.origin,
+      );
+      if (existing != null) {
+        existing.credentials = creds;
+        result.updated++;
+        continue;
+      }
+      this.data.machines.push({
+        id: `m${this.data.nextId++}`,
+        name: rec.name,
+        credentials: creds,
+        favorite: rec.favorite === true,
+        sortOrder: this.data.nextSortOrder++,
+        createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : this.now(),
+        lastUsedAt: null,
+        muted: rec.muted === true,
+      });
+      result.added++;
+    }
+    return result;
   }
 
   /** Display order: favorites first, then manual sortOrder ascending. */
