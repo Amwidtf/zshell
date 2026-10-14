@@ -59,7 +59,10 @@ adb -s 127.0.0.1:16512 shell am start -n com.zshell/.MainActivity
 
 - [ ] `npx vitest run` 全绿
 - [ ] `./gradlew assembleDebug`（以及需要的 release 变体）成功
-- [ ] 版本号三处同步：根 `package.json`、`apps/mobile/package.json`、`android/app/build.gradle`（versionName/versionCode）、`src/version.ts`
+- [ ] 版本号已用脚本同步：`node scripts/bump-version.mjs <版本号>|pre [versionCode]`
+      一次写入根 `package.json`、`apps/mobile/package.json`、`android/app/build.gradle`
+      （versionName/versionCode）、`src/version.ts`，并顺带同步 `package-lock.json`
+      头部；勿再手改散落的版本字段
 - [ ] 免责声明 / 隐私政策内容仍与实际行为一致（docs/PRIVACY.md 中的权限与第三方清单），
       且与 `apps/mobile/src/legal.ts`（应用内展示版）同步；实质性变更时提升
       `LEGAL_DOC_VERSION` 触发重新征求同意

@@ -2,12 +2,19 @@
 
 ## 版本规范
 
-- 语义化版本，Alpha 阶段：`0.0.1-alpha.N`
-- 版本号**四处同步**（发版检查单第 3 条）：
-  1. 根 `package.json`
-  2. `apps/mobile/package.json`
-  3. `apps/mobile/android/app/build.gradle`（versionName + versionCode 递增）
-  4. `apps/mobile/src/version.ts`（关于页展示）
+- 语义化版本；预发布阶段用 `0.y.z-{alpha,beta,rc}.N`，正式版去掉后缀
+- 版本号**一律用脚本同步，勿手改**（发版检查单第 3 条）：
+
+  ```bash
+  node scripts/bump-version.mjs pre               # 预发布计数 +1（0.1.0-beta.1 → 0.1.0-beta.2；无后缀则进入 -alpha.1）
+  node scripts/bump-version.mjs 0.1.0             # 显式指定版本
+  node scripts/bump-version.mjs 0.1.0-beta.2 11   # 显式指定版本与 versionCode
+  ```
+
+  脚本一次写入：根 `package.json`、`apps/mobile/package.json`、
+  `android/app/build.gradle`（versionName + versionCode，缺省 +1）、`src/version.ts`，
+  并顺带同步 `package-lock.json` 头部两处 workspace 版本。
+  输入经 Semver 校验，versionCode 必须大于当前值，非法输入直接失败退出。
 
 ## 发布步骤
 
@@ -16,9 +23,12 @@
 npx vitest run
 cd apps/mobile/android && ./gradlew assembleRelease
 
-# 2. 更新 CHANGELOG.md：新增「## [版本号] - 日期」段落（新增/变更/修复分类）
+# 2. 版本号：脚本统一同步（见上「版本规范」）
+node scripts/bump-version.mjs pre
 
-# 3. 提交并打标签
+# 3. 更新 CHANGELOG.md：新增「## [版本号] - 日期」段落（新增/变更/修复分类）
+
+# 4. 提交并打标签
 git add -A && git commit -m "<版本号>：<摘要>"
 git tag v<版本号>
 git push origin main --tags
