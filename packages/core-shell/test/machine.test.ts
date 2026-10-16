@@ -125,4 +125,92 @@ describe('MachineRegistry', () => {
     expect(MachineRegistry.fromJSON('{"version":99,"machines":[]}')).toBeNull();
     expect(MachineRegistry.fromJSON(null)).not.toBeNull(); // empty -> fresh
   });
+
+  it('adds a Kimi Code machine with a source-labeled default name', () => {
+    const {reg} = fakeRegistry();
+    const r = reg.addFromUrl(
+      'https://code-rc.kimi.com/devices/888b349b-d6c4-4d41-8278-4cdf8fee9cf8/?rc=1&from=kimi_code_desktop',
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.record.name).toBe('Kimi Code Desktop 888b349b');
+    expect(r.record.credentials.kind).toBe('kimi');
+    // Re-pairing the same device id refreshes instead of duplicating.
+    const again = reg.addFromUrl('https://code-rc.kimi.com/devices/888b349b-d6c4-4d41-8278-4cdf8fee9cf8/');
+    expect(again.ok && again.updatedExisting).toBe(true);
+    expect(reg.size).toBe(1);
+  });
+
+  it('round-trips a Kimi machine through JSON with kind and query flags', () => {
+    const {reg} = fakeRegistry();
+    reg.addFromUrl(QR_A);
+    reg.addFromUrl(
+      'https://code-rc.kimi.ai/devices/abc123?rc=1&from=kimi_code_cli',
+    );
+    const restored = MachineRegistry.fromJSON(JSON.stringify(reg.toJSON()))!;
+    const kimi = restored.sorted().find(m => m.credentials.kind === 'kimi')!;
+    expect(kimi.credentials.source).toBe('kimi_code_cli');
+    expect(kimi.credentials.extraQuery).toBe('rc=1&from=kimi_code_cli');
+    expect(kimi.name).toBe('Kimi Code CLI abc123');
+  });
+
+  it('importMachines accepts kimi records and sanitizes malformed extras', () => {
+    const {reg} = fakeRegistry();
+    reg.addFromUrl(QR_A);
+    const result = reg.importMachines([
+      {
+        name: 'Kimi 备份机',
+        credentials: {
+          sid: 'dev-1',
+          hash: '',
+          origin: 'https://code-rc.kimi.com',
+          mid: null,
+          deviceName: null,
+          appVersion: null,
+          issuedAt: null,
+          kind: 'kimi',
+          source: 'kimi_code_desktop',
+          extraQuery: 'rc=1&from=kimi_code_desktop',
+        },
+        favorite: false,
+      },
+      {
+        name: '坏 kind',
+        credentials: {
+          sid: 'dev-2',
+          hash: 'x',
+          origin: 'https://zcode.z.ai',
+          mid: null,
+          deviceName: null,
+          appVersion: null,
+          issuedAt: null,
+          kind: 'other-vendor',
+        },
+      },
+      {
+        name: '非字符串 source 被清洗',
+        credentials: {
+          sid: 'dev-3',
+          hash: 'x',
+          origin: 'https://code-rc.kimi.ai',
+          mid: null,
+          deviceName: null,
+          appVersion: null,
+          issuedAt: null,
+          kind: 'kimi',
+          source: 42,
+          extraQuery: true,
+        },
+      },
+    ]);
+    expect(result).toEqual({added: 2, updated: 0});
+    const kimi = reg.get('m2')!;
+    expect(kimi.credentials.kind).toBe('kimi');
+    expect(kimi.credentials.source).toBe('kimi_code_desktop');
+    const cleaned = reg.get('m3')!;
+    expect(cleaned.credentials.source).toBeNull();
+    expect(cleaned.credentials.extraQuery).toBeNull();
+    // 坏 kind 的记录被跳过，未占用 id。
+    expect(reg.size).toBe(3);
+  });
 });

@@ -3,6 +3,24 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 记录格式，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。Alpha 阶段 API 与存储格式可能调整。
 
+## [0.1.0-beta.2] - 2026-10-16
+
+### 新增
+- **Kimi Code 远程控制兼容**：扫码或粘贴链接即可添加 Kimi Code 设备
+  （国内 code-rc.kimi.com / 国际 code-rc.kimi.ai）。Kimi 的配对链接只含
+  设备标识，账号登录在应用内打开的官方页面完成，登录态由系统保管，
+  登录一次后重启免登录；使用远程控制需要你本人的 Kimi 账号及相应会员
+  权益。升级后首次进入会重新征求一次协议同意（法律文本 v6）
+- **机器列表分类**：已配对设备按宿主分成「ZCode」「Kimi Code」两组，
+  各组内收藏仍置顶；Kimi 设备默认名带来源标识（如 Kimi Code Desktop），
+  多设备一眼可辨
+
+### 已知限制
+- Kimi Code 会话的「等待批准」本地通知暂未接入：其页面协议未公开，
+  连接状态条可正常工作，通知待真机观察后补充
+- 发版流程改为脚本统一同步版本号（scripts/bump-version.mjs），对使用
+  无影响
+
 ## [0.1.0-beta.1] - 2026-10-11
 
 进入 beta：功能面补齐，重心转向稳定性观察。

@@ -1,4 +1,4 @@
-import {PairingCredentials, parsePairingUrl, ParseFailureReason} from './pairing-url';
+import {hostLabel, PairingCredentials, parsePairingUrl, ParseFailureReason} from './pairing-url';
 
 /**
  * A saved remote machine (paired desktop endpoint). The whole registry is
@@ -35,6 +35,11 @@ export interface MachineRegistryOptions {
 }
 
 function defaultName(creds: PairingCredentials): string {
+  if (creds.kind === 'kimi') {
+    // Kimi links carry no device name — label the product source plus an
+    // id prefix so multiple devices of one account stay distinguishable.
+    return `${hostLabel(creds)} ${creds.sid.slice(0, 8)}`;
+  }
   if (creds.deviceName != null && creds.deviceName.length > 0) {
     return creds.deviceName;
   }
@@ -201,22 +206,28 @@ export class MachineRegistry {
         creds == null ||
         typeof creds.sid !== 'string' ||
         typeof creds.hash !== 'string' ||
-        typeof creds.origin !== 'string'
+        typeof creds.origin !== 'string' ||
+        (creds.kind !== undefined && creds.kind !== 'zcode' && creds.kind !== 'kimi')
       ) {
         continue;
       }
+      const sanitized: PairingCredentials = {
+        ...creds,
+        source: typeof creds.source === 'string' ? creds.source : null,
+        extraQuery: typeof creds.extraQuery === 'string' ? creds.extraQuery : null,
+      };
       const existing = this.data.machines.find(
         m => m.credentials.sid === creds.sid && m.credentials.origin === creds.origin,
       );
       if (existing != null) {
-        existing.credentials = creds;
+        existing.credentials = sanitized;
         result.updated++;
         continue;
       }
       this.data.machines.push({
         id: `m${this.data.nextId++}`,
         name: rec.name,
-        credentials: creds,
+        credentials: sanitized,
         favorite: rec.favorite === true,
         sortOrder: this.data.nextSortOrder++,
         createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : this.now(),

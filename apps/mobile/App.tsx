@@ -1,5 +1,5 @@
 /**
- * ZShell — ZCode remote-control mobile shell.
+ * ZShell — remote-control mobile shell for ZCode / Kimi Code desktops.
  * @format
  */
 

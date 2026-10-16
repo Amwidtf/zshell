@@ -112,7 +112,13 @@ export const WS_OBSERVER_PATCH_SOURCE = String.raw`(function () {
       var ws = (protocols === undefined)
         ? new NativeWS(url)
         : new NativeWS(url, protocols);
-      if (typeof url === 'string' && url.indexOf('/ws') !== -1) {
+      // Relay candidates: ZCode relay sockets carry /ws in the path; Kimi Code
+      // remote-control pages tunnel through wss://code-rc.kimi.com|ai hosts.
+      // Read-only observer — widening the match has no page-visible effect.
+      var isRelay = typeof url === 'string' &&
+        (url.indexOf('/ws') !== -1 ||
+          /^wss?:\/\/code-rc\.kimi\.(com|ai)\//i.test(url));
+      if (isRelay) {
         post('ws-open', {});
         ws.addEventListener('open', function () { post('ws-connected', {}); });
         ws.addEventListener('close', function (ev) {
@@ -133,7 +139,7 @@ export const WS_OBSERVER_PATCH_SOURCE = String.raw`(function () {
       WrappedWS.CLOSED = NativeWS.CLOSED;
     } catch (e) { /* constants are best-effort */ }
     window.WebSocket = WrappedWS;
-    window[FLAG] = 'ws-observer:v1';
+    window[FLAG] = 'ws-observer:v2';
     window.addEventListener('online', function () { post('network-online', {}); });
     window.addEventListener('offline', function () { post('network-offline', {}); });
   } catch (e) { /* patches must never break the page */ }

@@ -34,4 +34,23 @@ export interface PairingCredentials {
   appVersion: string | null;
   /** QR `t` param — issue timestamp in ms from the desktop clock. */
   issuedAt: number | null;
+  /**
+   * Product family this machine belongs to; absent means 'zcode' (records
+   * stored before multi-host support). 'kimi' = Kimi Code remote control.
+   */
+  kind?: HostKind;
+  /**
+   * Kimi Code only: `from` query param of the pairing link
+   * (e.g. 'kimi_code_desktop' — distinguishes Desktop from CLI source).
+   */
+  source?: string | null;
+  /**
+   * Kimi Code only: raw query string of the pairing link (e.g.
+   * 'rc=1&from=...'), reused verbatim when opening the console so no
+   * mode flags from the QR are lost.
+   */
+  extraQuery?: string | null;
 }
+
+/** Which desktop product a pairing belongs to. */
+export type HostKind = 'zcode' | 'kimi';

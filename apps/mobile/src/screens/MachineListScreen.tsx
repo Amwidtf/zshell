@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {MachineRecord} from '@zshell/core-shell';
+import {hostKindOf, MachineRecord} from '@zshell/core-shell';
 import {colors, font} from '../theme';
 
 interface MachineListScreenProps {
@@ -32,11 +32,42 @@ function hostOf(record: MachineRecord): string {
   }
 }
 
+type Row =
+  | {type: 'host'; label: string}
+  | {type: 'sub'; favorite: boolean}
+  | {type: 'machine'; m: MachineRecord};
+
+/** Group by host product (ZCode / Kimi Code), favorites-first inside each. */
+function buildRows(machines: MachineRecord[]): Row[] {
+  const groups: Array<[string, MachineRecord[]]> = [
+    ['ZCode', machines.filter(m => hostKindOf(m.credentials) === 'zcode')],
+    ['Kimi Code', machines.filter(m => hostKindOf(m.credentials) === 'kimi')],
+  ];
+  const rows: Row[] = [];
+  for (const [label, group] of groups) {
+    if (group.length === 0) {
+      continue;
+    }
+    rows.push({type: 'host', label});
+    const hasFavorites = group.some(m => m.favorite);
+    let prevFav: boolean | null = null;
+    for (const m of group) {
+      if (hasFavorites && m.favorite !== prevFav) {
+        rows.push({type: 'sub', favorite: m.favorite});
+        prevFav = m.favorite;
+      }
+      rows.push({type: 'machine', m});
+    }
+  }
+  return rows;
+}
+
 export function MachineListScreen(props: MachineListScreenProps) {
   const {machines} = props;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteArmId, setDeleteArmId] = useState<string | null>(null);
+  const rows = buildRows(machines);
 
   return (
     <View style={styles.root}>
@@ -52,29 +83,36 @@ export function MachineListScreen(props: MachineListScreenProps) {
           <Text style={styles.emptyEmoji}>📱➜🖥</Text>
           <Text style={font.body}>还没有配对的桌面端</Text>
           <Text style={[font.faint, {marginTop: 8, textAlign: 'center'}]}>
-            先在 ZCode 桌面端打开「Web 远程控制」，{'\n'}
+            先在 ZCode 或 Kimi Code 桌面端打开「远程控制」，{'\n'}
             用下方扫码；或者直接粘贴配对链接。
           </Text>
         </ScrollView>
       ) : (
         <FlatList
-          data={machines}
-          keyExtractor={m => m.id}
+          data={rows}
+          keyExtractor={(row, index) =>
+            row.type === 'machine' ? row.m.id : `${row.type}-${index}`
+          }
           contentContainerStyle={{paddingHorizontal: 16, paddingBottom: 120}}
-          renderItem={({item, index}) => {
-            const isFavoriteGroup = item.favorite;
-            const showGroupHeader =
-              index === 0
-                ? isFavoriteGroup
-                : isFavoriteGroup !== machines[index - 1].favorite;
+          renderItem={({item: row, index}) => {
+            if (row.type === 'host') {
+              return (
+                <Text style={[styles.hostHeader, index === 0 && styles.hostHeaderFirst]}>
+                  {row.label}
+                </Text>
+              );
+            }
+            if (row.type === 'sub') {
+              return (
+                <Text style={styles.groupHeader}>
+                  {row.favorite ? '★ 收藏' : '全部'}
+                </Text>
+              );
+            }
+            const item = row.m;
             const expanded = expandedId === item.id;
             return (
               <View>
-                {showGroupHeader ? (
-                  <Text style={styles.groupHeader}>
-                    {isFavoriteGroup ? '★ 收藏' : '全部'}
-                  </Text>
-                ) : null}
                 <TouchableOpacity
                   style={styles.row}
                   onPress={() => props.onConnect(item.id)}
@@ -194,10 +232,19 @@ const styles = StyleSheet.create({
   settingsButton: {padding: 8},
   empty: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 6},
   emptyEmoji: {fontSize: 40, marginBottom: 8},
+  hostHeader: {
+    color: colors.textDim,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 22,
+    marginBottom: 2,
+    letterSpacing: 1,
+  },
+  hostHeaderFirst: {marginTop: 8},
   groupHeader: {
     color: colors.textFaint,
     fontSize: 12,
-    marginTop: 18,
+    marginTop: 12,
     marginBottom: 6,
     letterSpacing: 1,
   },

@@ -17,6 +17,7 @@ import {
   ConsoleEvent,
   ConsoleStatus,
   deriveConsoleStatus,
+  hostLabel,
   MachineRecord,
   parseClock,
   parseConsoleEvent,
@@ -104,6 +105,8 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     return text.length > 60 ? text.slice(0, 60) + '…' : text;
   };
 
+  const brand = hostLabel(machine.credentials);
+
   const handleBridgeMessage = useCallback(
     (event: WebViewMessageEvent) => {
       const bridgeEvent = parseConsoleEvent(event.nativeEvent.data);
@@ -112,7 +115,7 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
       }
       logDiag(bridgeEvent.type, diagDetail(bridgeEvent));
       if (bridgeEvent.type === 'approval-waiting') {
-        notify(2, 'approval', 'ZCode · 等待你的批准', 'Agent 请求执行操作，点开应用处理');
+        notify(2, 'approval', `${brand} · 等待你的批准`, 'Agent 请求执行操作，点开应用处理');
         return;
       }
       setStatus(prev => {
@@ -127,7 +130,7 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         return next;
       });
     },
-    [notify],
+    [notify, brand],
   );
 
   const reload = useCallback(() => {

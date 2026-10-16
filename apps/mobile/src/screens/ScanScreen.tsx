@@ -28,6 +28,7 @@ const REASON_TEXT: Record<string, string> = {
   'not-https': '仅支持 https 配对地址',
   'missing-sid': '缺少 sid 参数（不是配对二维码）',
   'missing-hash': '缺少 hash 参数（不是配对二维码）',
+  'invalid-device-path': '不是有效的 Kimi Code 设备链接',
 };
 
 export function ScanScreen({onResult, onDone}: ScanScreenProps) {
@@ -108,7 +109,8 @@ export function ScanScreen({onResult, onDone}: ScanScreenProps) {
           </View>
         ) : (
           <Text style={styles.tip}>
-            对准桌面端「Web 远程控制」二维码，或从相册选择二维码截图
+            对准桌面端「远程控制」二维码（支持 ZCode / Kimi Code），{'\n'}
+            或从相册选择二维码截图
           </Text>
         )}
         <TouchableOpacity style={styles.albumButton} onPress={pickFile}>

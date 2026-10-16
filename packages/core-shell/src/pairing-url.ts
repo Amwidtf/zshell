@@ -1,8 +1,13 @@
-import {PairingCredentials} from './types';
+import {HostKind, PairingCredentials} from './types';
 
 /**
- * QR / pairing URL format emitted by the official desktop client:
+ * QR / pairing URL formats emitted by the official desktop clients:
+ * - ZCode:
  *   https://<origin>/remote/v4?sid=<deviceSid>&hash=<passHash>&t=<ms>&mid=<mid>&name=<name>&app_version=<ver>
+ * - Kimi Code remote control:
+ *   https://code-rc.kimi.com/devices/<deviceId>/?rc=1&from=kimi_code_desktop
+ *     (global region serves from code-rc.kimi.ai; account login happens on
+ *     the official page itself — the link carries no secret material)
  * Described here for interoperability with the user's own paired desktop.
  */
 export type ParseFailureReason =
@@ -10,14 +15,43 @@ export type ParseFailureReason =
   | 'invalid-url'
   | 'not-https'
   | 'missing-sid'
-  | 'missing-hash';
+  | 'missing-hash'
+  | 'invalid-device-path';
 
 export type ParseResult =
   | {ok: true; credentials: PairingCredentials}
   | {ok: false; reason: ParseFailureReason};
 
+/** Kimi Code remote-control relay hosts (domestic / global region). */
+const KIMI_RC_HOSTS = new Set(['code-rc.kimi.com', 'code-rc.kimi.ai']);
+
+/** Device id charset observed in Kimi Code links (UUID-style). */
+const KIMI_DEVICE_PATH_RE = /^\/devices\/([A-Za-z0-9][A-Za-z0-9_-]*)\/?$/;
+
 function fail(reason: ParseFailureReason): ParseResult {
   return {ok: false, reason};
+}
+
+function parseKimiUrl(url: URL): ParseResult {
+  const m = KIMI_DEVICE_PATH_RE.exec(url.pathname);
+  if (m == null) {
+    return fail('invalid-device-path');
+  }
+  return {
+    ok: true,
+    credentials: {
+      kind: 'kimi',
+      sid: m[1],
+      hash: '',
+      origin: url.origin,
+      mid: null,
+      deviceName: null,
+      appVersion: null,
+      issuedAt: null,
+      source: url.searchParams.get('from'),
+      extraQuery: url.search.length > 1 ? url.search.slice(1) : null,
+    },
+  };
 }
 
 export function parsePairingUrl(raw: string): ParseResult {
@@ -33,6 +67,9 @@ export function parsePairingUrl(raw: string): ParseResult {
   }
   if (url.protocol !== 'https:') {
     return fail('not-https');
+  }
+  if (KIMI_RC_HOSTS.has(url.hostname.toLowerCase())) {
+    return parseKimiUrl(url);
   }
   const sid = (url.searchParams.get('sid') ?? '').trim();
   const hash = (url.searchParams.get('hash') ?? '').trim();
@@ -56,6 +93,30 @@ export function parsePairingUrl(raw: string): ParseResult {
       issuedAt,
     },
   };
+}
+
+const KIMI_SOURCE_LABELS: Record<string, string> = {
+  kimi_code_desktop: 'Kimi Code Desktop',
+  kimi_code_cli: 'Kimi Code CLI',
+  kimi_code: 'Kimi Code CLI',
+};
+
+/**
+ * Human label for the host product of a pairing: 'ZCode',
+ * 'Kimi Code Desktop' / 'Kimi Code CLI' (from the QR `from` param),
+ * or 'Kimi Code' when the source is unknown.
+ */
+export function hostLabel(c: PairingCredentials): string {
+  if (c.kind !== 'kimi') {
+    return 'ZCode';
+  }
+  const source = c.source == null ? '' : c.source;
+  return KIMI_SOURCE_LABELS[source] ?? 'Kimi Code';
+}
+
+/** Host kind of a pairing; absent field (legacy records) means 'zcode'. */
+export function hostKindOf(c: PairingCredentials): HostKind {
+  return c.kind ?? 'zcode';
 }
 
 /**
@@ -87,10 +148,21 @@ export interface ConsoleUrlOptions {
 
 /**
  * Build the remote console URL from stored credentials.
- * On reconnection only sid/hash are semantically required; `t` is refreshed to
- * the current time (the page uses it for freshness checks at most optionally).
+ * Kimi Code: the pairing link is stable and secret-free — rebuild
+ * /devices/<id>/ verbatim (reusing the QR's query so mode flags such as
+ * `rc=1` are preserved) and let the page handle its own account login.
+ * ZCode: on reconnection only sid/hash are semantically required; `t` is
+ * refreshed to the current time (the page uses it for freshness checks at
+ * most optionally).
  */
 export function buildConsoleUrl(c: PairingCredentials, opts: ConsoleUrlOptions = {}): string {
+  if (c.kind === 'kimi') {
+    const u = new URL(`/devices/${encodeURIComponent(c.sid)}/`, c.origin);
+    if (c.extraQuery != null && c.extraQuery.length > 0) {
+      u.search = c.extraQuery;
+    }
+    return u.toString();
+  }
   const pathVersion = opts.pathVersion ?? consolePathFor(c.appVersion);
   const u = new URL(`/remote/${pathVersion}`, c.origin);
   u.searchParams.set('sid', c.sid);

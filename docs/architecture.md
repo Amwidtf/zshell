@@ -32,9 +32,10 @@ SHA-256/HMAC/PBKDF2/Base64）放在 `packages/core-shell`，**不 import 任何�
 
 ### 2. 壳路线：官方页面是产品主体
 
-ZShell 的 WebView 加载官方 `/remote/v4` 控制台——中继连接、配对握手、会话桥全部由
+ZShell 的 WebView 加载官方控制台（ZCode `/remote/v4`；Kimi Code
+`code-rc.kimi.com/devices/<id>/`）——中继连接、配对或账号登录、会话桥全部由
 官方页面自身完成。壳的增值全部在页面之外：加密凭据管理、多机管理、应用锁、
-本地通知（规划）、移动端缺陷补丁。
+本地通知、移动端缺陷补丁。
 
 ### 3. patch-bundle 自防护纪律
 

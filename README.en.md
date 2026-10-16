@@ -7,16 +7,17 @@
 ![react native](https://img.shields.io/badge/React%20Native-0.82-61DAFB?logo=react)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-An unofficial, open-source, zero-collection mobile client for ZCode's "Web Remote Control".
+An unofficial, open-source, zero-collection mobile client for the "Remote Control" consoles of ZCode and Kimi Code desktop.
 
-Three ways to pair: scan the QR with the camera, paste the link, or pick a QR screenshot from your gallery (PNG/JPEG decoding happens entirely on-device; no native dependency was added for it). Credentials go into encrypted storage, and the official console runs inside a hardened WebView. The parts the official web page can't give you — credential management, app lock, multi-machine favorites, mobile experience patches — the shell provides.
+Three ways to pair: scan the QR with the camera, paste the link, or pick a QR screenshot from your gallery (PNG/JPEG decoding happens entirely on-device; no native dependency was added for it). Credentials go into encrypted storage, and the official console runs inside a hardened WebView. ZCode pairs via the `sid`/`hash` inside its link; Kimi Code links carry only a device id — account login happens on the official page inside the app, and the login state is kept by the system WebView (log in once, survive restarts). The parts the official web page can't give you — credential management, app lock, multi-machine favorites, mobile experience patches — the shell provides.
 
-> ⚠️ Unofficial project. Not affiliated with or endorsed by ZCode / Zhipu AI. You need your own ZCode desktop client with "Web Remote Control" enabled. Details in the [disclaimer](./docs/DISCLAIMER.md) (Chinese).
+> ⚠️ Unofficial project. Not affiliated with or endorsed by ZCode / Zhipu AI / Moonshot AI. You need your own desktop with "Remote Control" enabled (Kimi Code remote control additionally requires your own Kimi account with the applicable membership). Details in the [disclaimer](./docs/DISCLAIMER.md) (Chinese).
 
 ## Features
 
+- **Dual-host support**: one shell manages both ZCode (zcode.z.ai / zcode.chatglm.site) and Kimi Code (code-rc.kimi.com / code-rc.kimi.ai) desktops; the machine list is grouped by host
 - **Machine management**: custom names, favorites pinned on top, manual ordering; re-pairing the same desktop merges the record and rotates credentials
-- **Encrypted storage**: pairing credentials (`sid` + `hash`) AES-encrypted at rest, keys held by Android Keystore, never in plaintext
+- **Encrypted storage**: pairing credentials (ZCode's `sid`/`hash`, Kimi Code's device id) AES-encrypted at rest, keys held by Android Keystore, never in plaintext
 - **App lock**: fingerprint / face, pattern, and password can all be enabled at once — any one unlocks, so a single failed method never locks you out; auto-relock on returning from background; biometric availability detected per device
 - **Connection status & notifications**: live status strip above the console (connecting / connected / waiting for desktop / disconnected / kicked); local notifications on disconnect, kick, and approval-waiting
 - **In-app updates**: checks GitHub Releases with visible download progress, translated failure reasons, and a browser-download fallback; optional auto-check on launch (notify only, never auto-install)
