@@ -8,7 +8,9 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
+import android.webkit.WebStorage
 import androidx.core.content.FileProvider
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.Arguments
@@ -44,6 +46,12 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       val fileName: String,
       val url: String,
       val kind: String,
+      /** Stall watchdog: bytes seen at the last poll where progress happened. */
+      val lastBytes: Long = 0L,
+      /** Wall-clock ms of the last observed progress (0 = unknown). */
+      val lastMoveAt: Long = 0L,
+      /** Set when WE cancelled the download (stall watchdog); shown as failed. */
+      val deadReason: String? = null,
   )
 
   private val dm: DownloadManager
@@ -104,6 +112,9 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
             fileName = o.optString("name"),
             url = o.optString("url"),
             kind = o.optString("kind", KIND_FILE),
+            lastBytes = o.optLong("lastBytes"),
+            lastMoveAt = o.optLong("lastMoveAt"),
+            deadReason = o.optString("deadReason").ifEmpty { null },
         )
       }
     } catch (e: Exception) {
@@ -114,12 +125,17 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
   private fun saveMeta(list: List<DownloadMeta>) {
     val arr = JSONArray()
     list.forEach { m ->
-      arr.put(
-          JSONObject()
-              .put("id", m.id)
-              .put("name", m.fileName)
-              .put("url", m.url)
-              .put("kind", m.kind))
+      val o = JSONObject()
+          .put("id", m.id)
+          .put("name", m.fileName)
+          .put("url", m.url)
+          .put("kind", m.kind)
+          .put("lastBytes", m.lastBytes)
+          .put("lastMoveAt", m.lastMoveAt)
+      if (m.deadReason != null) {
+        o.put("deadReason", m.deadReason)
+      }
+      arr.put(o)
     }
     prefs.edit().putString(KEY_ITEMS, arr.toString()).apply()
   }
@@ -153,6 +169,9 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       metas.removeAll { it.kind == KIND_UPDATE }
       dir.listFiles()?.forEach { if (it.name.endsWith(".apk")) it.delete() }
     }
+    // Stale watchdog-cancelled rows served their purpose once a new download
+    // starts; drop them so retrying doesn't leave duplicate failed entries.
+    metas.removeAll { it.deadReason != null }
     val request = try {
       DownloadManager.Request(parsedUrl)
           .setTitle(if (kind == KIND_UPDATE) "ZShell 更新" else safeName)
@@ -173,7 +192,13 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       promise.reject("ENQUEUE", e.message ?: "无法开始下载", e)
       return
     }
-    metas.add(DownloadMeta(id, safeName, url, kind))
+    metas.add(
+        DownloadMeta(
+            id = id,
+            fileName = safeName,
+            url = url,
+            kind = kind,
+            lastMoveAt = System.currentTimeMillis()))
     saveMeta(metas)
     promise.resolve(id.toDouble())
   }
@@ -186,21 +211,29 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
   fun queryDownloads(promise: Promise) {
     try {
       ensureReceiver()
-      val metas = loadMeta().associateBy { it.id }
+      val now = System.currentTimeMillis()
+      val metas = loadMeta().toMutableList()
+      val byId: MutableMap<Long, DownloadMeta> = metas.associateBy { it.id }.toMutableMap()
       val cursor = dm.query(DownloadManager.Query())
       val out: WritableArray = Arguments.createArray()
       val liveIds = mutableSetOf<Long>()
+      val stalled = mutableListOf<DownloadMeta>()
+      val stalledNames = mutableListOf<String>()
       while (cursor.moveToNext()) {
         val id = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_ID))
         liveIds.add(id)
-        val meta = metas[id]
-        val item: WritableMap = Arguments.createMap()
-        item.putDouble("id", id.toDouble())
         val titleIdx = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
-        item.putString(
-            "name", meta?.fileName ?: if (titleIdx >= 0) cursor.getString(titleIdx) else "下载")
-        item.putString("kind", meta?.kind ?: KIND_FILE)
-        item.putString("url", meta?.url ?: "")
+        val cursorTitle = if (titleIdx >= 0) cursor.getString(titleIdx) else "下载"
+        var meta = byId[id]
+        if (meta == null) {
+          // First time we see a uid download we didn't enqueue ourselves
+          // (console WebView): start tracking it for the stall watchdog.
+          meta = DownloadMeta(
+              id = id, fileName = cursorTitle, url = "", kind = KIND_FILE,
+              lastBytes = 0L, lastMoveAt = now)
+          byId[id] = meta
+          metas.add(meta)
+        }
 
         val statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
         val status = if (statusIdx >= 0) cursor.getInt(statusIdx) else -1
@@ -208,6 +241,34 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
         val reason = if (reasonIdx >= 0) cursor.getInt(reasonIdx) else -1
         val bytesIdx = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
         val totalIdx = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+        val bytes = if (bytesIdx >= 0) cursor.getLong(bytesIdx) else 0L
+
+        if (status == DownloadManager.STATUS_PENDING ||
+            status == DownloadManager.STATUS_RUNNING) {
+          if (bytes > meta.lastBytes) {
+            byId[id] = meta.copy(lastBytes = bytes, lastMoveAt = now)
+          } else if (meta.lastMoveAt == 0L) {
+            // Legacy metadata from before the watchdog: start its clock now.
+            byId[id] = meta.copy(lastMoveAt = now)
+          } else if (meta.lastMoveAt in 1 until now - STALL_MS) {
+            // No progress for a long time: cancel and surface it as failed
+            // with a retry hint instead of leaving a zombie entry.
+            stalled.add(meta.copy(deadReason = "长时间无响应，已自动取消"))
+            stalledNames.add(meta.fileName.ifEmpty { cursorTitle })
+            continue
+          }
+        } else if (status == DownloadManager.STATUS_PAUSED) {
+          // User-paused: restart the stall grace for when it resumes.
+          byId[id] = meta.copy(lastMoveAt = now)
+        }
+
+        meta = byId[id]!!
+        val item: WritableMap = Arguments.createMap()
+        item.putDouble("id", id.toDouble())
+        item.putString(
+            "name", meta.fileName.ifEmpty { cursorTitle })
+        item.putString("kind", meta.kind)
+        item.putString("url", meta.url)
         when (status) {
           DownloadManager.STATUS_PENDING -> item.putString("status", "pending")
           DownloadManager.STATUS_RUNNING -> item.putString("status", "running")
@@ -219,20 +280,51 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
           }
           else -> item.putString("status", "running")
         }
-        item.putDouble(
-            "bytesSoFar",
-            (if (bytesIdx >= 0) cursor.getLong(bytesIdx) else 0L).toDouble())
+        item.putDouble("bytesSoFar", bytes.toDouble())
         item.putDouble(
             "totalBytes",
             (if (totalIdx >= 0) cursor.getLong(totalIdx) else 0L).toDouble())
         out.pushMap(item)
       }
       cursor.close()
-      // Drop metadata for downloads the system no longer knows about.
-      if (metas.keys.any { it !in liveIds }) {
-        saveMeta(loadMeta().filter { it.id in liveIds })
+
+      // Cancel the stalled ones only after the cursor is closed, and record
+      // them as failed rows so the UI can offer retry/delete.
+      for (dead in stalled) {
+        try {
+          dm.remove(dead.id)
+        } catch (e: Exception) {
+          // already gone
+        }
+        liveIds.remove(dead.id)
+        byId[dead.id] = dead
+        val item: WritableMap = Arguments.createMap()
+        item.putDouble("id", dead.id.toDouble())
+        item.putString("name", dead.fileName)
+        item.putString("kind", dead.kind)
+        item.putString("url", dead.url)
+        item.putString("status", "failed")
+        item.putString("reason", dead.deadReason)
+        item.putDouble("bytesSoFar", 0.0)
+        item.putDouble("totalBytes", 0.0)
+        out.pushMap(item)
       }
+
+      // Persist the (possibly updated) watchdog state; keep cancelled rows so
+      // they stay visible until the user deletes/retries them.
+      val keep = metas.map { byId[it.id] ?: it }.filter { it.id in liveIds || it.deadReason != null }
+      saveMeta(keep)
       promise.resolve(out)
+
+      if (stalledNames.isNotEmpty()) {
+        val text = stalledNames.joinToString("、")
+        try {
+          reactContext.getNativeModule(NotificationsModule::class.java)
+              ?.notify(6.0, "下载已自动取消", "「$text」长时间无响应，可重试或删除")
+        } catch (e: Exception) {
+          // notification is best-effort
+        }
+      }
     } catch (e: Exception) {
       promise.reject("QUERY", "无法读取下载列表", e)
     }
@@ -372,6 +464,27 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
+  // ---------- web login state ----------
+
+  /**
+   * Wipe all WebView cookies and web storage (localStorage etc.) held by this
+   * app — i.e. log the console pages (Kimi Code account, any web session)
+   * out. Pairing credentials in encrypted storage are NOT touched.
+   */
+  @ReactMethod
+  fun clearWebSession(promise: Promise) {
+    try {
+      val cookies = CookieManager.getInstance()
+      cookies.removeAllCookies(null)
+      cookies.removeSessionCookies(null)
+      cookies.flush()
+      WebStorage.getInstance().deleteAllData()
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("CLEAR_WEB", e.message ?: "清除失败", e)
+    }
+  }
+
   // ---------- helpers ----------
 
   private fun installApk(apk: File): Boolean = try {
@@ -436,6 +549,9 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     private const val KIND_UPDATE = "update"
     private const val KIND_FILE = "file"
     private const val UPDATE_PREFIX = "zshell-update-"
+    /** Stall watchdog: cancel a pending/running download with no byte
+     * progress for this long (checked whenever any screen polls the list). */
+    private const val STALL_MS = 2 * 60 * 1000L
 
     /** Strip path separators / reserved chars; keep it short but readable. */
     private fun sanitizeFileName(name: String): String {

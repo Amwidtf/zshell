@@ -25,7 +25,7 @@ import {SettingsScreen} from './src/screens/SettingsScreen';
 import {loadLegalConsent, loadLockConfig, loadRegistry, saveLegalConsent, saveLockConfig, saveRegistry} from './src/storage';
 import {LEGAL_DOC_VERSION} from './src/legal';
 import {loadPrefs, notifications} from './src/notifications';
-import {cleanupInstalledApks} from './src/downloads';
+import {cleanupInstalledApks, clearWebSession} from './src/downloads';
 import {fetchLatestRelease} from './src/updater';
 import {APP_VERSION} from './src/version';
 
@@ -62,6 +62,10 @@ function App(): React.JSX.Element {
     const consent = loadLegalConsent();
     setConsented(consent != null && consent.version >= LEGAL_DOC_VERSION);
     setBooting(false);
+    // 不缓存网页登录：冷启动即清除登录 Cookie，本次会话需重新登录
+    if (!loadPrefs().cacheWebLogin) {
+      clearWebSession().catch(() => {});
+    }
   }, []);
 
   // Relock whenever the app leaves the foreground while the lock is enabled
@@ -128,6 +132,26 @@ function App(): React.JSX.Element {
       setMachines(registryRef.current.sorted());
     }
   }, []);
+
+  // 退出 Kimi 账号（网页登录数据是账号级、所有 Kimi 机器共享）：
+  // 清空 WebView 登录数据并把每台 Kimi 机器的观测状态置为未登录。
+  // 必须声明在下面的早退 return 之前（hook 不得条件执行）。
+  const signOutWebLogin = useCallback(() => {
+    clearWebSession()
+      .then(() => {
+        const registry = registryRef.current;
+        if (registry == null) {
+          return;
+        }
+        for (const m of registry.sorted()) {
+          if (m.credentials.kind === 'kimi') {
+            registry.setLoginState(m.id, 'logged-out');
+          }
+        }
+        persist();
+      })
+      .catch(() => {});
+  }, [persist]);
 
   const addFromUrl = useCallback(
     (url: string, customName?: string) => {
@@ -267,6 +291,11 @@ function App(): React.JSX.Element {
           onBack={pop}
           registerBackHandler={registerConsoleBack}
           onOpenDownloads={() => push({name: 'downloads'})}
+          onLoginState={state => {
+            if (registryRef.current?.setLoginState(base.machineId, state)) {
+              persist();
+            }
+          }}
         />
       ) : (
         <MachineListScreen
@@ -295,6 +324,7 @@ function App(): React.JSX.Element {
             registryRef.current?.remove(id);
             persist();
           }}
+          onSignOutWebLogin={signOutWebLogin}
         />
       );
       break;
@@ -327,6 +357,7 @@ function App(): React.JSX.Element {
             registryRef.current?.remove(id);
             persist();
           }}
+          onSignOutWebLogin={signOutWebLogin}
         />
       );
   }

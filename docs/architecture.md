@@ -46,7 +46,15 @@ ZShell 的 WebView 加载官方控制台（ZCode `/remote/v4`；Kimi Code
 2. **环境探针自退役**——环境本身正常时补丁自动失效（如 matchMedia 已正确上报）；
 3. **只针对精确字符串**——影响面收敛到单一检测点，不做大范围覆盖。
 
-补丁以 JS 字符串形式导出（`packages/patch-bundle`），与宿主框架无关。
+补丁以 JS 字符串形式导出（`packages/patch-bundle`），与宿主框架无关。当前补丁：
+P-1 matchMedia 移动端输入判定（ZCode 控制台）、P-2 relay WebSocket 只读观察器、
+P-3 `AbortSignal.any` polyfill（Kimi Code 登录依赖它，模拟器/容器常见的旧版
+系统 WebView 没有；环境已原生支持时自动不注入）。
+
+多宿主（ZCode / Kimi Code）差异全部收敛在 core-shell 的配对解析与凭据模型里
+（`HostKind`），壳层 UI、桥接、通知与生命周期管理两宿主共用；Kimi Code 的账号
+登录由官方页面在壳内覆盖层完成，登录态（Cookie）由系统 WebView 保管、可在设
+置一键清除。
 
 ### 4. 自管理导航栈 + 系统返回优先级
 

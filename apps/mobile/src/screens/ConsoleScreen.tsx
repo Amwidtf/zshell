@@ -19,6 +19,7 @@ import {
   ConsoleStatus,
   deriveConsoleStatus,
   hostLabel,
+  MachineLoginState,
   MachineRecord,
   parseClock,
   parseConsoleEvent,
@@ -37,6 +38,14 @@ const STATUS_META: Record<ConsoleStatus, {label: string; color: string}> = {
   kicked: {label: '已在其他设备连接', color: colors.danger},
 };
 
+function authHostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
 interface ConsoleScreenProps {
   machine: MachineRecord;
   onBack: () => void;
@@ -48,6 +57,11 @@ interface ConsoleScreenProps {
   registerBackHandler: (fn: (() => boolean) | null) => void;
   /** Opens the download manager (console-triggered downloads land there). */
   onOpenDownloads: () => void;
+  /**
+   * Observed web-login state for Kimi Code machines (page landing on /login
+   * means signed out, staying on /devices/ means signed in).
+   */
+  onLoginState?: (state: MachineLoginState) => void;
 }
 
 /**
@@ -55,7 +69,7 @@ interface ConsoleScreenProps {
  * (matchMedia fix etc.) is injected before any page script runs; everything
  * else — relay WSS, pairing handshake — is done by the official page itself.
  */
-export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads}: ConsoleScreenProps) {
+export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads, onLoginState}: ConsoleScreenProps) {
   const webviewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -169,6 +183,27 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     return () => sub.remove();
   }, [reload]);
 
+  // Kimi Code 登录态观测：页面最终落在 /login = 未登录，留在 /devices/ = 已登录。
+  // 注：必须用 onNavigationStateChange——本版本 onLoadEnd 事件在 Android
+  // 上不带 url（undefined）。诊断只记布尔，不记 URL 内容（路径含设备标识）。
+  const observeLoginState = useCallback(
+    (url: string) => {
+      if (machine.credentials.kind !== 'kimi' || url.length === 0) {
+        return;
+      }
+      logDiag(
+        'login-observed',
+        `l:${url.includes('/login')} d:${url.includes('/devices/')}`,
+      );
+      if (url.includes('/login')) {
+        onLoginState?.('logged-out');
+      } else if (url.includes('/devices/')) {
+        onLoginState?.('logged-in');
+      }
+    },
+    [machine.credentials.kind, onLoginState],
+  );
+
   const handleWebBack = useCallback(() => {
     if (canGoBackRef.current && webviewRef.current != null) {
       webviewRef.current.goBack();
@@ -177,10 +212,13 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     return false;
   }, []);
 
-  // Kimi Code 登录用 window.open 新开 auth.kimi.com 授权页。壳是单窗口
-  // 模型：把授权页导航进同一个 WebView（仅 https），授权回调后页面自己
-  // 回到设备页，登录态落在壳的 Cookie 存储里（不能丢系统浏览器，否则
-  // cookie 进浏览器、壳里永远未登录）。
+  // Kimi Code 登录用 window.open 新开 auth.kimi.com 授权页，授权完成后
+  // 原（登录）页面轮询拿到 token 并跳回设备页。壳用覆盖层模拟这个弹窗：
+  // 主窗口保留登录页继续轮询，授权页叠在上层；主窗口离开 /login 时覆盖
+  // 层自动收起。不能丢给系统浏览器——登录态会落进浏览器的 Cookie 存储，
+  // 壳里永远未登录。
+  const [authWindowUrl, setAuthWindowUrl] = useState<string | null>(null);
+
   const handleOpenWindow = useCallback((event: WebViewOpenWindowEvent) => {
     const target = event.nativeEvent.targetUrl;
     if (typeof target !== 'string' || !target.startsWith('https://')) {
@@ -192,9 +230,7 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     } catch {
       logDiag('window-open');
     }
-    webviewRef.current?.injectJavaScript(
-      `location.href = ${JSON.stringify(target)}; true;`,
-    );
+    setAuthWindowUrl(target);
   }, []);
 
   useEffect(() => {
@@ -243,6 +279,12 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         downloadingMessage="已开始下载，可在 设置 → 下载管理 查看"
         onNavigationStateChange={(nav: WebViewNavigation) => {
           canGoBackRef.current = nav.canGoBack;
+          const url = typeof nav.url === 'string' ? nav.url : '';
+          // 登录完成后原页面跳回设备页——授权覆盖层随之收起
+          if (url.includes('/devices/')) {
+            setAuthWindowUrl(null);
+          }
+          observeLoginState(url);
         }}
         onLoadStart={() => {
           setLoadFailed(false);
@@ -266,6 +308,33 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
           </View>
         )}
       />
+
+      {authWindowUrl != null && (
+        <View style={styles.authOverlay}>
+          <View style={styles.authBar}>
+            <Text style={styles.authTitle} numberOfLines={1}>
+              {authHostOf(authWindowUrl)} · 授权登录
+            </Text>
+            <TouchableOpacity
+              style={styles.authClose}
+              onPress={() => setAuthWindowUrl(null)}>
+              <Text style={styles.authCloseText}>✕ 关闭</Text>
+            </TouchableOpacity>
+          </View>
+          <WebView
+            source={{uri: authWindowUrl}}
+            injectedJavaScriptBeforeContentLoaded={buildPatchSource()}
+            javaScriptEnabled
+            domStorageEnabled
+            cacheEnabled={false}
+            originWhitelist={['*']}
+            style={styles.webview}
+            setSupportMultipleWindows
+            javaScriptCanOpenWindowsAutomatically
+            onOpenWindow={handleOpenWindow}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -306,4 +375,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
   },
+  authOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.bg,
+    elevation: 10,
+  },
+  authBar: {
+    height: 52,
+    backgroundColor: colors.bgElevated,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  authTitle: {...font.body, flex: 1, textAlign: 'center'},
+  authClose: {paddingHorizontal: 12, paddingVertical: 8},
+  authCloseText: {color: colors.accent, fontSize: 14},
 });

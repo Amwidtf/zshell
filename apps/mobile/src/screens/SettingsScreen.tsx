@@ -42,6 +42,7 @@ import {
   queryDownloads,
   shareTextFile,
   startUpdateDownload,
+  clearWebSession,
 } from '../downloads';
 import {fetchLatestRelease, PROJECT_PAGE} from '../updater';
 import type {UpdateChannel} from '../notifications';
@@ -115,12 +116,7 @@ export function SettingsScreen({
   const [progress, setProgress] = useState<{bytes: number; total: number} | null>(null);
   const [openApkError, setOpenApkError] = useState<string | null>(null);
   const [notesRelease, setNotesRelease] = useState<ReleaseInfo | null>(null);
-  const [prefs, setPrefs] = useState<AppPrefs>({
-    notificationsEnabled: true,
-    autoCheckUpdates: true,
-    updateChannel: 'stable',
-    quietHours: {enabled: false, start: '22:00', end: '08:00'},
-  });
+  const [prefs, setPrefs] = useState<AppPrefs>(() => loadPrefs());
 
   // ---------- backup & restore ----------
 
@@ -132,6 +128,9 @@ export function SettingsScreen({
   const [restorePass, setRestorePass] = useState('');
   const [backupBlob, setBackupBlob] = useState<string | null>(null);
   const [restoreResult, setRestoreResult] = useState<string | null>(null);
+  /** Web login wipe: two-tap arm + result feedback. */
+  const [webClearArm, setWebClearArm] = useState(false);
+  const [webClearResult, setWebClearResult] = useState<string | null>(null);
 
   useEffect(() => {
     setPrefs(loadPrefs());
@@ -689,6 +688,57 @@ export function SettingsScreen({
         ) : null}
         {error != null && backupMode != null ? (
           <Text style={styles.errorText}>{error}</Text>
+        ) : null}
+      </View>
+
+      {/* ================= 网页登录状态 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>网页登录状态</Text>
+        <Text style={font.faint}>
+          Kimi Code 账号的登录数据保存在应用内，所有 Kimi 机器共用一份
+        </Text>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>跨重启保留登录</Text>
+            <Text style={font.faint}>关闭后每次启动应用都需重新登录</Text>
+          </View>
+          <Switch
+            value={prefs.cacheWebLogin}
+            onValueChange={on => {
+              const next = {...prefs, cacheWebLogin: on};
+              setPrefs(next);
+              savePrefs(next);
+              if (!on) {
+                // 关闭立即兑现语义：清一次登录数据
+                clearWebSession().catch(() => {});
+              }
+            }}
+            trackColor={{true: colors.accent}}
+            thumbColor="#ffffff"
+          />
+        </View>
+        <View style={styles.divider} />
+        <TouchableOpacity
+          style={[styles.rowButton, webClearArm && {backgroundColor: 'rgba(229,83,75,0.2)'}]}
+          onPress={async () => {
+            if (!webClearArm) {
+              setWebClearArm(true);
+              return;
+            }
+            setWebClearArm(false);
+            try {
+              await clearWebSession();
+              setWebClearResult('已清除全部网页登录数据');
+            } catch {
+              setWebClearResult('清除失败，可稍后重试');
+            }
+          }}>
+          <Text style={styles.rowButtonText}>
+            {webClearArm ? '再点一次确认清除' : '清除全部网页登录数据'}
+          </Text>
+        </TouchableOpacity>
+        {webClearResult != null ? (
+          <Text style={{color: colors.textDim, fontSize: 13}}>{webClearResult}</Text>
         ) : null}
       </View>
 

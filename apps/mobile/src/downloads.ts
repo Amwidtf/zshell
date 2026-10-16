@@ -33,6 +33,7 @@ interface DownloadsNativeModule {
   deleteUpdateApk(name: string): void;
   openUrlInBrowser(url: string): Promise<void>;
   shareTextFile(fileName: string, text: string): Promise<void>;
+  clearWebSession(): Promise<boolean>;
 }
 
 function module(): DownloadsNativeModule {
@@ -50,6 +51,11 @@ export async function startUpdateDownload(release: ReleaseInfo): Promise<number>
     `zshell-update-${release.version}.apk`,
     'update',
   );
+}
+
+/** Wipe WebView cookies + web storage: logs console pages out (Kimi account). */
+export function clearWebSession(): Promise<boolean> {
+  return module().clearWebSession();
 }
 
 /** Re-enqueue a failed download we still know the URL of. */

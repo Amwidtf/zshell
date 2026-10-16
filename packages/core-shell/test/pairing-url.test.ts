@@ -5,6 +5,7 @@ import {
   hostKindOf,
   hostLabel,
   parsePairingUrl,
+  sourceShortLabel,
 } from '../src/pairing-url';
 
 const SAMPLE_QR =
@@ -197,5 +198,25 @@ describe('buildConsoleUrl', () => {
     const kimi = parsePairingUrl('https://code-rc.kimi.ai/devices/abc123');
     if (!kimi.ok) throw new Error('fixture must parse');
     expect(buildConsoleUrl(kimi.credentials)).toBe('https://code-rc.kimi.ai/devices/abc123/');
+  });
+});
+
+describe('sourceShortLabel', () => {
+  it('maps Kimi QR source to compact labels, empty otherwise', () => {
+    const desktop = parsePairingUrl(SAMPLE_KIMI);
+    if (!desktop.ok) throw new Error('fixture must parse');
+    expect(sourceShortLabel(desktop.credentials)).toBe('Desktop');
+
+    const cli = parsePairingUrl('https://code-rc.kimi.com/devices/abc123?from=kimi_code_cli');
+    if (!cli.ok) throw new Error('fixture must parse');
+    expect(sourceShortLabel(cli.credentials)).toBe('CLI');
+
+    const unknown = parsePairingUrl('https://code-rc.kimi.ai/devices/abc123?from=whatever');
+    if (!unknown.ok) throw new Error('fixture must parse');
+    expect(sourceShortLabel(unknown.credentials)).toBe('');
+
+    const zcode = parsePairingUrl(SAMPLE_QR);
+    if (!zcode.ok) throw new Error('fixture must parse');
+    expect(sourceShortLabel(zcode.credentials)).toBe('');
   });
 });

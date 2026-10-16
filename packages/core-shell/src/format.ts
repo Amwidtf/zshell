@@ -36,3 +36,31 @@ export function formatPercent(done: number, total: number): string {
   const pct = Math.min(100, Math.floor((done / total) * 100));
   return `${pct}%`;
 }
+
+/**
+ * Chinese relative-time label for "last used": 刚刚 / N 分钟前 / N 小时前 /
+ * N 天前; older than 30 days falls back to the date (M月D日). ts <= 0 -> ''.
+ */
+export function relativeTime(ts: number | null, now: number): string {
+  if (ts == null || ts <= 0 || now < ts) {
+    return '';
+  }
+  const diff = now - ts;
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < minute) {
+    return '刚刚';
+  }
+  if (diff < hour) {
+    return `${Math.floor(diff / minute)} 分钟前`;
+  }
+  if (diff < day) {
+    return `${Math.floor(diff / hour)} 小时前`;
+  }
+  if (diff < 30 * day) {
+    return `${Math.floor(diff / day)} 天前`;
+  }
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}

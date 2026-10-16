@@ -30,6 +30,12 @@ export interface AppPrefs {
   updateChannel: UpdateChannel;
   /** Quiet hours: informational notifications are muted inside the window. */
   quietHours: QuietHours;
+  /**
+   * Keep web login state (console cookies) across restarts. When off, web
+   * session data is wiped when leaving the console and on app start, so every
+   * session requires signing in again.
+   */
+  cacheWebLogin: boolean;
 }
 
 const DEFAULT_QUIET: QuietHours = {enabled: false, start: '22:00', end: '08:00'};
@@ -48,6 +54,7 @@ function defaults(): AppPrefs {
     autoCheckUpdates: true,
     updateChannel: defaultChannel(),
     quietHours: {...DEFAULT_QUIET},
+    cacheWebLogin: true,
   };
 }
 
@@ -85,6 +92,10 @@ export function loadPrefs(): AppPrefs {
           ? parsed.updateChannel
           : base.updateChannel,
       quietHours: parseQuietHours(parsed.quietHours),
+      cacheWebLogin:
+        typeof parsed.cacheWebLogin === 'boolean'
+          ? parsed.cacheWebLogin
+          : base.cacheWebLogin,
     };
   } catch {
     return defaults();

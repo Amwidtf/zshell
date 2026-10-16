@@ -8,8 +8,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {hostKindOf, MachineRecord} from '@zshell/core-shell';
-import {colors, font} from '../theme';
+import {
+  hostKindOf,
+  MachineRecord,
+  relativeTime,
+  sourceShortLabel,
+} from '@zshell/core-shell';
+import {colors, font, radius} from '../theme';
 
 interface MachineListScreenProps {
   machines: MachineRecord[];
@@ -22,6 +27,11 @@ interface MachineListScreenProps {
   onMove: (id: string, direction: -1 | 1) => void;
   onSetMuted: (id: string, muted: boolean) => void;
   onDelete: (id: string) => void;
+  /**
+   * Sign out of the web account (Kimi Code). Login data is account-level and
+   * shared by every Kimi machine, so this affects all of them at once.
+   */
+  onSignOutWebLogin: () => void;
 }
 
 function hostOf(record: MachineRecord): string {
@@ -48,7 +58,7 @@ function buildRows(machines: MachineRecord[]): Row[] {
     if (group.length === 0) {
       continue;
     }
-    rows.push({type: 'host', label});
+    rows.push({type: 'host', label: `${label} · ${group.length} 台`});
     const hasFavorites = group.some(m => m.favorite);
     let prevFav: boolean | null = null;
     for (const m of group) {
@@ -62,11 +72,37 @@ function buildRows(machines: MachineRecord[]): Row[] {
   return rows;
 }
 
+/** Login pill for the card corner: text-first, color as support. */
+function loginPillOf(m: MachineRecord): {label: string; color: string; bg: string} {
+  if (hostKindOf(m.credentials) === 'kimi') {
+    switch (m.loginState) {
+      case 'logged-in':
+        return {label: '已登录', color: colors.success, bg: colors.successSoft};
+      case 'logged-out':
+        return {label: '未登录', color: colors.danger, bg: colors.dangerSoft};
+      default:
+        return {label: '未确认', color: colors.textFaint, bg: 'transparent'};
+    }
+  }
+  return {label: '就绪', color: colors.textDim, bg: colors.neutralSoft};
+}
+
+function machineMeta(m: MachineRecord, now: number): string {
+  return [
+    sourceShortLabel(m.credentials),
+    hostOf(m),
+    relativeTime(m.lastUsedAt, now),
+  ]
+    .filter(s => s.length > 0)
+    .join(' · ');
+}
+
 export function MachineListScreen(props: MachineListScreenProps) {
   const {machines} = props;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteArmId, setDeleteArmId] = useState<string | null>(null);
+  const [signOutArm, setSignOutArm] = useState(false);
   const rows = buildRows(machines);
 
   return (
@@ -80,7 +116,9 @@ export function MachineListScreen(props: MachineListScreenProps) {
 
       {machines.length === 0 ? (
         <ScrollView contentContainerStyle={styles.empty}>
-          <Text style={styles.emptyEmoji}>📱➜🖥</Text>
+          <View style={styles.emptyBadge}>
+            <Text style={styles.emptyEmoji}>📱➜🖥</Text>
+          </View>
           <Text style={font.body}>还没有配对的桌面端</Text>
           <Text style={[font.faint, {marginTop: 8, textAlign: 'center'}]}>
             先在 ZCode 或 Kimi Code 桌面端打开「远程控制」，{'\n'}
@@ -94,6 +132,11 @@ export function MachineListScreen(props: MachineListScreenProps) {
             row.type === 'machine' ? row.m.id : `${row.type}-${index}`
           }
           contentContainerStyle={{paddingHorizontal: 16, paddingBottom: 120}}
+          ListFooterComponent={
+            <Text style={[font.faint, {marginTop: 18, textAlign: 'center'}]}>
+              长按卡片可管理：重命名、收藏排序、静音、退出账号、删除
+            </Text>
+          }
           renderItem={({item: row, index}) => {
             if (row.type === 'host') {
               return (
@@ -111,33 +154,44 @@ export function MachineListScreen(props: MachineListScreenProps) {
             }
             const item = row.m;
             const expanded = expandedId === item.id;
+            const pill = loginPillOf(item);
+            const meta = machineMeta(item, Date.now());
             return (
               <View>
                 <TouchableOpacity
-                  style={styles.row}
+                  style={styles.card}
+                  activeOpacity={0.85}
                   onPress={() => props.onConnect(item.id)}
                   onLongPress={() => {
                     setExpandedId(expanded ? null : item.id);
                     setRenameValue(item.name);
                     setDeleteArmId(null);
+                    setSignOutArm(false);
                   }}>
-                  <TouchableOpacity
-                    style={styles.star}
-                    onPress={() => props.onToggleFavorite(item.id)}>
-                    <Text style={{fontSize: 18, color: item.favorite ? colors.star : colors.textFaint}}>
-                      {item.favorite ? '★' : '☆'}
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={{flex: 1}}>
-                    <Text style={font.body} numberOfLines={1}>
+                  <View style={styles.cardRow}>
+                    <TouchableOpacity
+                      style={styles.star}
+                      onPress={() => props.onToggleFavorite(item.id)}>
+                      <Text style={{fontSize: 18, color: item.favorite ? colors.star : colors.textFaint}}>
+                        {item.favorite ? '★' : '☆'}
+                      </Text>
+                    </TouchableOpacity>
+                    <Text style={styles.cardName} numberOfLines={1}>
                       {item.name}
                       {item.muted ? ' 🔇' : ''}
                     </Text>
-                    <Text style={font.faint} numberOfLines={1}>
-                      {hostOf(item)} · sid …{item.credentials.sid.slice(-6)}
-                    </Text>
+                    <View
+                      style={[styles.pill, {borderColor: pill.color, backgroundColor: pill.bg}]}
+                      accessibilityLabel={`登录状态：${pill.label}`}
+                      accessibilityRole="text">
+                      <Text style={[font.pill, {color: pill.color}]}>{pill.label}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.chevron}>›</Text>
+                  {meta.length > 0 ? (
+                    <Text style={[font.faint, {marginTop: 6}]} numberOfLines={1}>
+                      {meta}
+                    </Text>
+                  ) : null}
                 </TouchableOpacity>
 
                 {expanded ? (
@@ -159,6 +213,9 @@ export function MachineListScreen(props: MachineListScreenProps) {
                         <Text style={styles.smallButtonText}>保存</Text>
                       </TouchableOpacity>
                     </View>
+                    <Text style={[font.faint, {marginTop: 2}]}>
+                      sid …{item.credentials.sid.slice(-6)}
+                    </Text>
                     <View style={styles.actionRow}>
                       <TouchableOpacity
                         style={styles.smallButton}
@@ -196,6 +253,28 @@ export function MachineListScreen(props: MachineListScreenProps) {
                         </Text>
                       </TouchableOpacity>
                     </View>
+                    {hostKindOf(item.credentials) === 'kimi' ? (
+                      <View style={styles.signOutRow}>
+                        <Text style={[font.faint, {flex: 1}]}>
+                          退出 Kimi 账号（全部 Kimi 机器均需重新登录，配对记录不受影响）
+                        </Text>
+                        <TouchableOpacity
+                          style={[styles.smallButton, signOutArm && styles.dangerButton]}
+                          onPress={() => {
+                            if (signOutArm) {
+                              props.onSignOutWebLogin();
+                              setExpandedId(null);
+                              setSignOutArm(false);
+                            } else {
+                              setSignOutArm(true);
+                            }
+                          }}>
+                          <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+                            {signOutArm ? '确认退出' : '退出 Kimi 账号'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
                     <Text style={[font.faint, {marginTop: 6}]}>
                       长按条目展开管理，再长按收起
                     </Text>
@@ -231,7 +310,18 @@ const styles = StyleSheet.create({
   },
   settingsButton: {padding: 8},
   empty: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 6},
-  emptyEmoji: {fontSize: 40, marginBottom: 8},
+  emptyBadge: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: colors.bgElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  emptyEmoji: {fontSize: 36},
   hostHeader: {
     color: colors.textDim,
     fontSize: 13,
@@ -248,20 +338,32 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 1,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  card: {
     backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
+    borderRadius: radius.l,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 8,
   },
-  star: {paddingRight: 12},
-  chevron: {color: colors.textFaint, fontSize: 20, paddingLeft: 8},
+  cardRow: {flexDirection: 'row', alignItems: 'center'},
+  star: {paddingRight: 10},
+  cardName: {...font.body, fontWeight: '600', flex: 1},
+  pill: {
+    borderRadius: radius.s,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    marginLeft: 10,
+  },
   actions: {
     backgroundColor: '#1c1c1c',
-    borderRadius: 12,
+    borderRadius: radius.m,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     padding: 12,
+    marginTop: 6,
     marginBottom: 8,
     gap: 10,
   },
@@ -276,6 +378,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   actionRow: {flexDirection: 'row', gap: 8, flexWrap: 'wrap'},
+  signOutRow: {flexDirection: 'row', gap: 10, alignItems: 'center'},
   smallButton: {
     backgroundColor: colors.bgInput,
     borderRadius: 8,
@@ -298,7 +401,7 @@ const styles = StyleSheet.create({
   primaryButton: {
     flex: 1,
     backgroundColor: colors.accent,
-    borderRadius: 12,
+    borderRadius: radius.m,
     paddingVertical: 14,
     alignItems: 'center',
   },
@@ -306,7 +409,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     borderWidth: 1,
     borderColor: colors.accent,
-    borderRadius: 12,
+    borderRadius: radius.m,
     paddingVertical: 14,
     paddingHorizontal: 18,
     alignItems: 'center',

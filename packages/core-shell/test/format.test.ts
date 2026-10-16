@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {formatBytes, formatPercent} from '../src/format';
+import {formatBytes, formatPercent, relativeTime} from '../src/format';
 
 describe('formatBytes', () => {
   it('formats byte-level values without decimals', () => {
@@ -41,5 +41,31 @@ describe('formatPercent', () => {
   it('returns empty string when total is unknown', () => {
     expect(formatPercent(500, 0)).toBe('');
     expect(formatPercent(500, -1)).toBe('');
+  });
+});
+
+describe('relativeTime', () => {
+  const NOW = 1_700_000_000_000;
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+
+  it.each([
+    [null, ''],
+    [0, ''],
+    [NOW, '刚刚'],
+    [NOW - 30_000, '刚刚'],
+    [NOW - 5 * MIN, '5 分钟前'],
+    [NOW - 3 * HOUR, '3 小时前'],
+    [NOW - 2 * DAY, '2 天前'],
+    [NOW + MIN, ''],
+  ])('ts %s -> %s', (ts, expected) => {
+    expect(relativeTime(ts as number | null, NOW)).toBe(expected);
+  });
+
+  it('falls back to a date label beyond 30 days', () => {
+    const ts = new Date(2026, 2, 5).getTime();
+    const now = ts + 45 * DAY;
+    expect(relativeTime(ts, now)).toBe('3月5日');
   });
 });

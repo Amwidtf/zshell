@@ -5,6 +5,12 @@ import {hostLabel, PairingCredentials, parsePairingUrl, ParseFailureReason} from
  * persisted as one JSON blob inside encrypted storage — credentials never
  * touch plain preferences.
  */
+/**
+ * Observed web-login state for a machine (Kimi Code account pages only;
+ * absent = unknown / not applicable, e.g. ZCode hash pairing).
+ */
+export type MachineLoginState = 'logged-in' | 'logged-out';
+
 export interface MachineRecord {
   id: string;
   /** User-defined display name (defaults to the QR's device name or origin host). */
@@ -17,6 +23,10 @@ export interface MachineRecord {
   lastUsedAt: number | null;
   /** Per-machine notification mute (older backups may lack this field). */
   muted?: boolean;
+  /** Last observed console login state (see MachineLoginState). */
+  loginState?: MachineLoginState;
+  /** When loginState was last observed (ms). */
+  loginAt?: number | null;
 }
 
 export interface MachineRegistryData {
@@ -152,6 +162,17 @@ export class MachineRegistry {
     return true;
   }
 
+  /** Record the last observed web-login state (Kimi Code machines). */
+  setLoginState(id: string, state: MachineLoginState): boolean {
+    const m = this.data.machines.find(x => x.id === id);
+    if (m == null) {
+      return false;
+    }
+    m.loginState = state;
+    m.loginAt = this.now();
+    return true;
+  }
+
   /** Move a machine up (-1) or down (+1) within its favorite group. */
   move(id: string, direction: -1 | 1): boolean {
     const target = this.data.machines.find(x => x.id === id);
@@ -216,6 +237,10 @@ export class MachineRegistry {
         source: typeof creds.source === 'string' ? creds.source : null,
         extraQuery: typeof creds.extraQuery === 'string' ? creds.extraQuery : null,
       };
+      const loginState: MachineLoginState | undefined =
+        rec.loginState === 'logged-in' || rec.loginState === 'logged-out'
+          ? rec.loginState
+          : undefined;
       const existing = this.data.machines.find(
         m => m.credentials.sid === creds.sid && m.credentials.origin === creds.origin,
       );
@@ -233,6 +258,9 @@ export class MachineRegistry {
         createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : this.now(),
         lastUsedAt: null,
         muted: rec.muted === true,
+        ...(loginState != null
+          ? {loginState, loginAt: typeof rec.loginAt === 'number' ? rec.loginAt : null}
+          : {}),
       });
       result.added++;
     }

@@ -120,6 +120,24 @@ export function hostKindOf(c: PairingCredentials): HostKind {
 }
 
 /**
+ * Compact source label for card meta lines: 'Desktop' / 'CLI' for Kimi Code
+ * (from the QR `from` param), '' otherwise.
+ */
+export function sourceShortLabel(c: PairingCredentials): string {
+  if (c.kind !== 'kimi') {
+    return '';
+  }
+  const source = c.source == null ? '' : c.source;
+  if (source === 'kimi_code_desktop') {
+    return 'Desktop';
+  }
+  if (source === 'kimi_code_cli' || source === 'kimi_code') {
+    return 'CLI';
+  }
+  return '';
+}
+
+/**
  * Desktop app_version >= 3.4.0 serves /remote/v4, older serves /remote/v3
  * (observed version boundary used by the official client).
  */
