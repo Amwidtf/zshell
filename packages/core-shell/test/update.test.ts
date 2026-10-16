@@ -1,5 +1,11 @@
 import {describe, expect, it} from 'vitest';
-import {compareVersions, isNewer, parseLatestRelease} from '../src/update';
+import {
+  compareVersions,
+  isNewer,
+  parseLatestRelease,
+  pickLatestRelease,
+  preferredAbiTags,
+} from '../src/update';
 
 describe('compareVersions', () => {
   it.each([
@@ -80,5 +86,33 @@ describe('parseLatestRelease', () => {
     expect(
       parseLatestRelease({tag_name: 'v1.0.0', assets: [{name: 'x.txt'}]}),
     ).toBeNull();
+  });
+
+  it('honors a device-derived asset preference (translation env -> universal)', () => {
+    const release = {
+      tag_name: 'v1.0.0',
+      assets: [
+        {name: 'ZShell-1.0.0-arm64-v8a-release.apk', browser_download_url: 'a', size: 2},
+        {name: 'ZShell-1.0.0-universal-release.apk', browser_download_url: 'u', size: 1},
+        {name: 'ZShell-1.0.0-x86_64-release.apk', browser_download_url: 'x', size: 3},
+      ],
+    };
+    expect(parseLatestRelease(release, ['universal'])!.apkUrl).toBe('u');
+    expect(parseLatestRelease(release, ['x86_64', 'universal'])!.apkUrl).toBe('x');
+    expect(parseLatestRelease(release, ['armeabi-v7a', 'universal'])!.apkUrl).toBe('u');
+    expect(pickLatestRelease([release], ['universal'])!.apkUrl).toBe('u');
+  });
+});
+
+describe('preferredAbiTags', () => {
+  it.each([
+    [['x86_64', 'arm64-v8a', 'x86'], ['universal']],
+    [['arm64-v8a', 'x86'], ['universal']],
+    [['arm64-v8a', 'armeabi-v7a'], ['arm64-v8a', 'universal']],
+    [['x86_64', 'x86'], ['x86_64', 'universal']],
+    [['armeabi-v7a'], ['armeabi-v7a', 'universal']],
+    [[], ['universal']],
+  ])('abis %j -> %j', (abis, expected) => {
+    expect(preferredAbiTags(abis)).toEqual(expected);
   });
 });

@@ -1,6 +1,8 @@
+import {Platform} from 'react-native';
 import {
   parseLatestRelease,
   pickLatestRelease,
+  preferredAbiTags,
   ReleaseInfo,
 } from '@zshell/core-shell';
 
@@ -12,6 +14,15 @@ const RELEASES_LIST =
 export const PROJECT_PAGE = 'https://github.com/Amwidtf/zshell';
 
 export type UpdateChannel = 'stable' | 'beta';
+
+/**
+ * APK asset preference for THIS device, from its real ABI list. Translation
+ * environments (emulators/containers listing arm64 + x86) must take the
+ * universal APK — a split-ABI pick there can mismatch the installed primary
+ * ABI and crash the app at startup.
+ */
+const androidConstants = Platform.constants as {SupportedAbis?: string[]} | undefined;
+const UPDATE_ABI_TAGS = preferredAbiTags(androidConstants?.SupportedAbis ?? []);
 
 async function getJson(url: string): Promise<unknown | null> {
   try {
@@ -40,7 +51,7 @@ export async function fetchLatestRelease(
   channel: UpdateChannel = 'stable',
 ): Promise<ReleaseInfo | null> {
   if (channel === 'beta') {
-    return pickLatestRelease(await getJson(RELEASES_LIST));
+    return pickLatestRelease(await getJson(RELEASES_LIST), UPDATE_ABI_TAGS);
   }
-  return parseLatestRelease(await getJson(RELEASES_LATEST));
+  return parseLatestRelease(await getJson(RELEASES_LATEST), UPDATE_ABI_TAGS);
 }

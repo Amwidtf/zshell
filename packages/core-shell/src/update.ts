@@ -83,10 +83,38 @@ export function isPrerelease(version: string): boolean {
 }
 
 /**
- * Pick the best APK asset for a phone: arm64-v8a build when present, else the
- * universal APK, else any APK (ABI split releases upload several files).
+ * Ordered asset-name tags to prefer, derived from the device ABI list.
+ * Translation environments (emulators / containers) list arm64 together with
+ * x86 — there a split-ABI APK can mismatch the installed primary ABI and
+ * crash at startup, so the universal APK is the only safe pick.
  */
-function pickApkAsset(assets: AssetLike[]): AssetLike | null {
+export function preferredAbiTags(abis: readonly string[]): string[] {
+  const hasArm64 = abis.includes('arm64-v8a');
+  const hasX86 = abis.some(a => a === 'x86_64' || a === 'x86');
+  if (hasArm64 && hasX86) {
+    return ['universal'];
+  }
+  if (hasArm64) {
+    return ['arm64-v8a', 'universal'];
+  }
+  if (abis.includes('x86_64')) {
+    return ['x86_64', 'universal'];
+  }
+  if (abis.includes('armeabi-v7a')) {
+    return ['armeabi-v7a', 'universal'];
+  }
+  return ['universal'];
+}
+
+/**
+ * Pick the best APK asset: first match by the ordered preference tags
+ * (default arm64-v8a then universal), else any APK (ABI split releases
+ * upload several files).
+ */
+function pickApkAsset(
+  assets: AssetLike[],
+  prefer: readonly string[] = ['arm64-v8a', 'universal'],
+): AssetLike | null {
   const apks = assets.filter(
     a =>
       typeof a.name === 'string' &&
@@ -96,15 +124,20 @@ function pickApkAsset(assets: AssetLike[]): AssetLike | null {
   if (apks.length === 0) {
     return null;
   }
-  return (
-    apks.find(a => (a.name as string).includes('arm64-v8a')) ??
-    apks.find(a => (a.name as string).includes('universal')) ??
-    apks[0]
-  );
+  for (const tag of prefer) {
+    const hit = apks.find(a => (a.name as string).includes(tag));
+    if (hit != null) {
+      return hit;
+    }
+  }
+  return apks[0];
 }
 
 /** Extract update info from a GitHub `releases/latest` response; null when unusable. */
-export function parseLatestRelease(json: unknown): ReleaseInfo | null {
+export function parseLatestRelease(
+  json: unknown,
+  prefer?: readonly string[],
+): ReleaseInfo | null {
   if (json == null || typeof json !== 'object') {
     return null;
   }
@@ -113,7 +146,7 @@ export function parseLatestRelease(json: unknown): ReleaseInfo | null {
     return null;
   }
   const assets = Array.isArray(rel.assets) ? (rel.assets as AssetLike[]) : [];
-  const apk = pickApkAsset(assets);
+  const apk = pickApkAsset(assets, prefer);
   if (apk == null) {
     return null;
   }
@@ -132,13 +165,16 @@ export function parseLatestRelease(json: unknown): ReleaseInfo | null {
  * Needed because pre-release-marked versions are excluded from
  * `releases/latest` — the list endpoint includes them.
  */
-export function pickLatestRelease(json: unknown): ReleaseInfo | null {
+export function pickLatestRelease(
+  json: unknown,
+  prefer?: readonly string[],
+): ReleaseInfo | null {
   if (!Array.isArray(json)) {
     return null;
   }
   let best: ReleaseInfo | null = null;
   for (const item of json) {
-    const info = parseLatestRelease(item);
+    const info = parseLatestRelease(item, prefer);
     if (info == null) {
       continue;
     }
