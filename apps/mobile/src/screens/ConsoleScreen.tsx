@@ -11,6 +11,7 @@ import {
   WebViewErrorEvent,
   WebViewNavigation,
   WebViewMessageEvent,
+  WebViewOpenWindowEvent,
 } from 'react-native-webview';
 import {
   buildConsoleUrl,
@@ -176,6 +177,26 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
     return false;
   }, []);
 
+  // Kimi Code 登录用 window.open 新开 auth.kimi.com 授权页。壳是单窗口
+  // 模型：把授权页导航进同一个 WebView（仅 https），授权回调后页面自己
+  // 回到设备页，登录态落在壳的 Cookie 存储里（不能丢系统浏览器，否则
+  // cookie 进浏览器、壳里永远未登录）。
+  const handleOpenWindow = useCallback((event: WebViewOpenWindowEvent) => {
+    const target = event.nativeEvent.targetUrl;
+    if (typeof target !== 'string' || !target.startsWith('https://')) {
+      return;
+    }
+    // 诊断只记主机名——事件不得携带 URL / 凭据
+    try {
+      logDiag('window-open', new URL(target).host);
+    } catch {
+      logDiag('window-open');
+    }
+    webviewRef.current?.injectJavaScript(
+      `location.href = ${JSON.stringify(target)}; true;`,
+    );
+  }, []);
+
   useEffect(() => {
     registerBackHandler(handleWebBack);
     return () => registerBackHandler(null);
@@ -212,7 +233,11 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         originWhitelist={['*']}
         style={styles.webview}
         containerStyle={styles.webview}
-        setSupportMultipleWindows={false}
+        // Kimi Code 登录（auth.kimi.com）经 window.open 发起，必须放行
+        // 多窗口事件；onOpenWindow 把目标页导航回同一个 WebView。
+        setSupportMultipleWindows
+        javaScriptCanOpenWindowsAutomatically
+        onOpenWindow={handleOpenWindow}
         // File downloads inside the console are handled by the webview's own
         // system-DownloadManager path; they land in 下载管理 (uid query).
         downloadingMessage="已开始下载，可在 设置 → 下载管理 查看"

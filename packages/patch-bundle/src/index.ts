@@ -146,9 +146,51 @@ export const WS_OBSERVER_PATCH_SOURCE = String.raw`(function () {
 })();`;
 
 /**
+ * Patch P-3: polyfill AbortSignal.any for older WebView runtimes.
+ *
+ * Observed: the Kimi Code login page's OAuth transport composes request
+ * timeouts with AbortSignal.any(), which shipped in Chrome 116. Emulators
+ * and containers often carry a frozen older system WebView (e.g. Chrome
+ * 110 without store updates), where that call throws synchronously and the
+ * login start dies with a generic "check your connection" error before any
+ * request leaves the page.
+ *
+ * Patch: standard-semantics polyfill — the composite signal aborts with the
+ * reason of the first aborted input. Probes (self-retiring):
+ *  - AbortSignal.any already present (native or prior polyfill) -> no-op;
+ *  - any thrown error -> patch aborts silently (never break the page).
+ */
+export const ABORT_SIGNAL_PATCH_SOURCE = String.raw`(function () {
+  'use strict';
+  var FLAG = '__zshellAbortAny';
+  try {
+    if (typeof window === 'undefined' || typeof AbortSignal === 'undefined') { return; }
+    if (typeof AbortSignal.any === 'function' || window[FLAG]) { return; }
+    AbortSignal.any = function (signals) {
+      var controller = new AbortController();
+      for (var i = 0; i < signals.length; i++) {
+        (function (s) {
+          if (s == null || typeof s.addEventListener !== 'function') { return; }
+          if (s.aborted) { controller.abort(s.reason); return; }
+          s.addEventListener('abort', function () { controller.abort(s.reason); }, { once: true });
+        })(signals[i]);
+      }
+      return controller.signal;
+    };
+    window[FLAG] = 'abort-any:v1';
+  } catch (e) { /* patches must never break the page */ }
+})();`;
+
+/**
  * Full document-start payload for the WebView host.
  * Each entry is self-guarding; combine defensively.
  */
 export function buildPatchSource(): string {
-  return MATCHMEDIA_PATCH_SOURCE + '\n' + WS_OBSERVER_PATCH_SOURCE;
+  return (
+    MATCHMEDIA_PATCH_SOURCE +
+    '\n' +
+    WS_OBSERVER_PATCH_SOURCE +
+    '\n' +
+    ABORT_SIGNAL_PATCH_SOURCE
+  );
 }

@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 记录格式，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。Alpha 阶段 API 与存储格式可能调整。
 
+## [0.1.0-beta.4] - 2026-10-16
+
+### 修复
+- Kimi Code 登录在旧 WebView 环境无法启动（提示"无法开始登录，请检查网络
+  连接后重试"）：Kimi 官方登录页依赖 Chrome 116+ 的 AbortSignal.any，模拟
+  器 / 容器内置的系统 WebView 往往停留在旧版本（如 Chrome 110）且无法更
+  新。现在会在页面加载前补齐该标准 API 的等价实现（环境已支持时不做任
+  何事）
+- Kimi Code 授权页改为在应用内打开：官方登录经 window.open 新开授权页，
+  WebView 单窗口下会被拦截，现在把授权页导航到当前页面完成（登录态仍
+  保存在应用内，重启免登录）
+
 ## [0.1.0-beta.3] - 2026-10-16
 
 ### 修复
