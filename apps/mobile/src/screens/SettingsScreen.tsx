@@ -695,7 +695,7 @@ export function SettingsScreen({
       <View style={styles.card}>
         <Text style={styles.cardTitle}>网页登录状态</Text>
         <Text style={font.faint}>
-          Kimi Code 账号的登录数据保存在应用内，所有 Kimi 机器共用一份
+          控制台网页的登录数据保存在应用内：Kimi 机器共用 Kimi 账号登录，ZCode 机器共用 ZCode 账号登录
         </Text>
         <View style={styles.row}>
           <View style={styles.rowMain}>

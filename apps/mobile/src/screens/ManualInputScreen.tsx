@@ -27,7 +27,6 @@ const REASON_TEXT: Record<string, string> = {
   'invalid-url': '不是有效的 URL，请完整复制桌面端二维码对应的链接',
   'not-https': '仅支持 https 配对地址',
   'missing-sid': 'URL 中缺少 sid 参数',
-  'missing-hash': 'URL 中缺少 hash 参数',
   'invalid-device-path': '不是有效的 Kimi Code 设备链接（/devices/…）',
 };
 
@@ -56,7 +55,7 @@ export function ManualInputScreen({onSubmit, onDone}: ManualInputScreenProps) {
         </Text>
         <TextInput
           style={styles.urlInput}
-          placeholder={'https://zcode.z.ai/remote/v4?sid=…&hash=…\n或 https://code-rc.kimi.com/devices/<设备ID>/'}
+          placeholder={'https://zcode.z.ai/remote/v4?sid=…\n或 https://code-rc.kimi.com/devices/<设备ID>/'}
           placeholderTextColor={colors.textFaint}
           value={url}
           onChangeText={setUrl}
@@ -81,7 +80,7 @@ export function ManualInputScreen({onSubmit, onDone}: ManualInputScreenProps) {
           <Text style={styles.buttonText}>保存并连接</Text>
         </TouchableOpacity>
         <Text style={[font.faint, {marginTop: 16}]}>
-          ZCode 格式：https://&lt;origin&gt;/remote/v4?sid=…&amp;hash=…&amp;t=…{'\n'}
+          ZCode 格式：https://&lt;origin&gt;/remote/v4?sid=…（新版无需 hash，旧版链接同样可导入）{'\n'}
           Kimi Code 格式：https://code-rc.kimi.com/devices/&lt;设备ID&gt;/{'\n'}
           （桌面端二维码弹窗均可复制链接）
         </Text>

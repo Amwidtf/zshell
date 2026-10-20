@@ -27,7 +27,6 @@ const REASON_TEXT: Record<string, string> = {
   'invalid-url': '不是有效的 URL',
   'not-https': '仅支持 https 配对地址',
   'missing-sid': '缺少 sid 参数（不是配对二维码）',
-  'missing-hash': '缺少 hash 参数（不是配对二维码）',
   'invalid-device-path': '不是有效的 Kimi Code 设备链接',
 };
 

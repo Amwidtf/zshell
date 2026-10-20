@@ -55,9 +55,9 @@ describe('MachineRegistry', () => {
       ok: false,
       reason: 'not-https',
     });
-    expect(reg.addFromUrl('https://zcode.z.ai/remote/v4?sid=a')).toEqual({
+    expect(reg.addFromUrl('https://zcode.z.ai/remote/v4?hash=b')).toEqual({
       ok: false,
-      reason: 'missing-hash',
+      reason: 'missing-sid',
     });
   });
 

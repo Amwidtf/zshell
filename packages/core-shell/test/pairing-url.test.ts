@@ -11,6 +11,10 @@ import {
 const SAMPLE_QR =
   'https://zcode.z.ai/remote/v4?sid=dev-sid-123&hash=aGVsbG8lM0Q%3D&t=1727827200000&mid=machine-1&name=My%20PC&app_version=3.14.4';
 
+/** Relay v2 desktop QR: no hash, no t — account login happens on the page. */
+const SAMPLE_QR_V2 =
+  'https://zcode.z.ai/remote/v4?sid=dev-sid-456&mid=machine-2&name=Desk&app_version=3.15.1';
+
 const SAMPLE_KIMI =
   'https://code-rc.kimi.com/devices/888b349b-d6c4-4d41-8278-4cdf8fee9cf8/?rc=1&from=kimi_code_desktop';
 
@@ -52,9 +56,17 @@ describe('parsePairingUrl', () => {
     expect(r).toEqual({ok: false, reason: 'missing-sid'});
   });
 
-  it('rejects missing hash', () => {
-    const r = parsePairingUrl('https://zcode.z.ai/remote/v4?sid=a');
-    expect(r).toEqual({ok: false, reason: 'missing-hash'});
+  it('parses a relay-v2 QR URL (no hash, no t)', () => {
+    const r = parsePairingUrl(SAMPLE_QR_V2);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.credentials.sid).toBe('dev-sid-456');
+    expect(r.credentials.hash).toBe('');
+    expect(r.credentials.origin).toBe('https://zcode.z.ai');
+    expect(r.credentials.mid).toBe('machine-2');
+    expect(r.credentials.deviceName).toBe('Desk');
+    expect(r.credentials.appVersion).toBe('3.15.1');
+    expect(r.credentials.issuedAt).toBeNull();
   });
 
   it('tolerates non-numeric t (treated as null, not an error)', () => {
@@ -157,11 +169,28 @@ describe('buildConsoleUrl', () => {
   const creds = parsePairingUrl(SAMPLE_QR);
   if (!creds.ok) throw new Error('fixture must parse');
 
-  it('rebuilds a console URL with fresh t', () => {
+  it('rebuilds a legacy console URL with hash and a refreshed numeric t', () => {
     const url = buildConsoleUrl(creds.credentials, {now: 123456});
     expect(url.startsWith('https://zcode.z.ai/remote/v4?')).toBe(true);
     expect(url).toContain('sid=dev-sid-123');
+    expect(url).toContain('hash=aGVsbG8lM0Q%3D');
+    // The v1 page in production validates sid + hash + numeric t together.
     expect(url).toContain('t=123456');
+  });
+
+  it('rebuilds a relay-v2 console URL with only sid/mid/name/app_version', () => {
+    const v2 = parsePairingUrl(SAMPLE_QR_V2);
+    if (!v2.ok) throw new Error('fixture must parse');
+    const url = buildConsoleUrl(v2.credentials);
+    expect(url.startsWith('https://zcode.z.ai/remote/v4?')).toBe(true);
+    expect(url).toContain('sid=dev-sid-456');
+    expect(url).toContain('mid=machine-2');
+    expect(url).toContain('name=Desk');
+    expect(url).toContain('app_version=3.15.1');
+    // The v2 page rejects any URL carrying hash or t — neither may appear,
+    // not even as an empty param.
+    expect(url).not.toContain('hash');
+    expect(url).not.toContain('t=');
   });
 
   it('uses v3 path for old desktop versions', () => {
@@ -169,7 +198,7 @@ describe('buildConsoleUrl', () => {
       'https://zcode.z.ai/remote/v3?sid=a&hash=b&app_version=3.3.9',
     );
     if (!old.ok) throw new Error('fixture must parse');
-    expect(buildConsoleUrl(old.credentials, {now: 1})).toContain('/remote/v3?');
+    expect(buildConsoleUrl(old.credentials)).toContain('/remote/v3?');
   });
 
   it('round-trips through parsePairingUrl', () => {
@@ -179,6 +208,7 @@ describe('buildConsoleUrl', () => {
     if (!again.ok) return;
     expect(again.credentials.sid).toBe(creds.credentials.sid);
     expect(again.credentials.hash).toBe(creds.credentials.hash);
+    // Legacy links keep carrying a refreshed t, so issuedAt survives.
     expect(again.credentials.issuedAt).toBe(999);
   });
 

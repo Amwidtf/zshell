@@ -2,8 +2,15 @@ import {HostKind, PairingCredentials} from './types';
 
 /**
  * QR / pairing URL formats emitted by the official desktop clients:
- * - ZCode:
- *   https://<origin>/remote/v4?sid=<deviceSid>&hash=<passHash>&t=<ms>&mid=<mid>&name=<name>&app_version=<ver>
+ * - ZCode (relay v2, desktop 3.14+):
+ *   https://<origin>/remote/v4?sid=<deviceSid>&mid=<mid>&name=<name>&app_version=<ver>
+ *   The link carries no secret material — the mobile page requires an
+ *   account login (same account as the desktop) and rejects URLs that still
+ *   contain `hash` or `t` (observed in the open-source web client).
+ * - ZCode (legacy relay v1):
+ *   https://<origin>/remote/v4?sid=<deviceSid>&hash=<passHash>&t=<ms>…
+ *   Still parsed for older desktops; such links no longer pair against
+ *   relay-v2 desktops (the official page reports an invalid connection).
  * - Kimi Code remote control:
  *   https://code-rc.kimi.com/devices/<deviceId>/?rc=1&from=kimi_code_desktop
  *     (global region serves from code-rc.kimi.ai; account login happens on
@@ -15,7 +22,6 @@ export type ParseFailureReason =
   | 'invalid-url'
   | 'not-https'
   | 'missing-sid'
-  | 'missing-hash'
   | 'invalid-device-path';
 
 export type ParseResult =
@@ -72,13 +78,12 @@ export function parsePairingUrl(raw: string): ParseResult {
     return parseKimiUrl(url);
   }
   const sid = (url.searchParams.get('sid') ?? '').trim();
-  const hash = (url.searchParams.get('hash') ?? '').trim();
   if (sid.length === 0) {
     return fail('missing-sid');
   }
-  if (hash.length === 0) {
-    return fail('missing-hash');
-  }
+  // Relay-v2 links carry no hash; legacy v1 links keep sid+hash. Accept both —
+  // whether a legacy link can still pair is decided by the official page.
+  const hash = (url.searchParams.get('hash') ?? '').trim();
   const tParam = url.searchParams.get('t');
   const issuedAt = tParam != null && /^\d+$/.test(tParam) ? Number(tParam) : null;
   return {
@@ -160,7 +165,7 @@ export function consolePathFor(appVersion: string | null): 'v3' | 'v4' {
 
 export interface ConsoleUrlOptions {
   pathVersion?: 'v3' | 'v4';
-  /** Override timestamp (ms). Defaults to Date.now(); injectable for tests. */
+  /** Override timestamp (ms) for legacy links. Defaults to Date.now(). */
   now?: number;
 }
 
@@ -169,9 +174,11 @@ export interface ConsoleUrlOptions {
  * Kimi Code: the pairing link is stable and secret-free — rebuild
  * /devices/<id>/ verbatim (reusing the QR's query so mode flags such as
  * `rc=1` are preserved) and let the page handle its own account login.
- * ZCode: on reconnection only sid/hash are semantically required; `t` is
- * refreshed to the current time (the page uses it for freshness checks at
- * most optionally).
+ * ZCode: two generations coexist, keyed by hash presence.
+ * - Legacy (sid+hash): the page in production today validates
+ *   sid + hash + numeric `t` together, so `t` is refreshed on every open.
+ * - Relay v2 (no hash): the page requires an account login and rejects any
+ *   URL carrying `hash` or `t` — emit only sid/mid/name/app_version.
  */
 export function buildConsoleUrl(c: PairingCredentials, opts: ConsoleUrlOptions = {}): string {
   if (c.kind === 'kimi') {
@@ -184,8 +191,10 @@ export function buildConsoleUrl(c: PairingCredentials, opts: ConsoleUrlOptions =
   const pathVersion = opts.pathVersion ?? consolePathFor(c.appVersion);
   const u = new URL(`/remote/${pathVersion}`, c.origin);
   u.searchParams.set('sid', c.sid);
-  u.searchParams.set('hash', c.hash);
-  u.searchParams.set('t', String(opts.now ?? Date.now()));
+  if (c.hash.length > 0) {
+    u.searchParams.set('hash', c.hash);
+    u.searchParams.set('t', String(opts.now ?? Date.now()));
+  }
   if (c.mid != null) {
     u.searchParams.set('mid', c.mid);
   }
