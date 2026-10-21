@@ -22,7 +22,7 @@ Three ways to pair: scan the QR with the camera, paste the link, or pick a QR sc
 - **App lock**: fingerprint / face, pattern, and password can all be enabled at once — any one unlocks, so a single failed method never locks you out; auto-relock on returning from background; biometric availability detected per device
 - **Connection status & notifications**: live status strip above the console (connecting / connected / waiting for desktop / disconnected / kicked); local notifications on disconnect, kick, and approval-waiting
 - **In-app updates**: checks GitHub Releases with visible download progress, translated failure reasons, and a browser-download fallback; optional auto-check on launch (notify only, never auto-install)
-- **Download manager**: update packages and files downloaded from console pages in one list — progress, cancel, open, delete, retry; stuck downloads (no progress for 2 min) auto-cancel with a notice
+- **Download manager**: update packages and files downloaded from console pages in one list — progress, pause/resume with reason notices, cancel, open, delete, retry; stuck downloads (no progress for 2 min) auto-cancel with a notice
 - **Behavior patches**: document-start injection with self-retiring probes — e.g. fixes "Enter submits instead of newline" on some mobile browsers
 - **Compliance**: first-launch consent gate for the user agreement & privacy policy; a legal-document center in settings; zero data collection
 - **Details**: system back prefers in-page history before app navigation; edge-to-edge adaptation (fullscreen and Android containers); keyboard lifts input fields

@@ -19,7 +19,7 @@ export interface DownloadItem {
   status: DownloadStatus;
   bytesSoFar: number;
   totalBytes: number;
-  /** Translated failure reason, present only when status is 'failed'. */
+  /** Translated reason, present when status is 'failed' or 'paused'. */
   reason?: string;
 }
 
@@ -27,6 +27,7 @@ interface DownloadsNativeModule {
   download(url: string, fileName: string, kind: string): Promise<number>;
   queryDownloads(): Promise<DownloadItem[]>;
   removeDownload(id: number): Promise<void>;
+  resumeDownload(id: number): Promise<number>;
   openDownloadedFile(id: number): Promise<void>;
   openDownloadsUi(): Promise<void>;
   listUpdateApks(): Promise<string[]>;
@@ -69,6 +70,14 @@ export function queryDownloads(): Promise<DownloadItem[]> {
 
 export function removeDownload(id: number): Promise<void> {
   return module().removeDownload(id);
+}
+
+/**
+ * Continue a paused download. Resolves the (possibly new) download id —
+ * the native side restarts in place when it can, re-enqueues otherwise.
+ */
+export function resumeDownload(id: number): Promise<number> {
+  return module().resumeDownload(id);
 }
 
 export function openDownloadedFile(id: number): Promise<void> {

@@ -34,12 +34,14 @@ import {biometricAuth} from '../biometric';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {MarkdownText} from '../components/MarkdownText';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
-import {AppPrefs, loadPrefs, savePrefs} from '../notifications';
+import {AppPrefs, loadPrefs, notifications, savePrefs} from '../notifications';
 import {PatternPad} from '../PatternPad';
 import {
   openDownloadedFile,
   openInBrowser,
   queryDownloads,
+  removeDownload,
+  resumeDownload,
   shareTextFile,
   startUpdateDownload,
   clearWebSession,
@@ -92,6 +94,7 @@ type UpdateState =
   | {kind: 'latest'; release: ReleaseInfo}
   | {kind: 'available'; release: ReleaseInfo}
   | {kind: 'downloading'; release: ReleaseInfo; id: number}
+  | {kind: 'downloadPaused'; release: ReleaseInfo; id: number; reason?: string}
   | {kind: 'downloaded'; release: ReleaseInfo; id: number}
   | {kind: 'downloadFailed'; release: ReleaseInfo; reason: string};
 
@@ -291,12 +294,14 @@ export function SettingsScreen({
   };
 
   // Poll the system download manager for the running update download; the
-  // installer itself launches natively when the file completes.
+  // installer itself launches natively when the file completes. Also keeps
+  // polling while paused so a silent auto-resume is reflected on the card.
   useEffect(() => {
-    if (update.kind !== 'downloading') {
+    if (update.kind !== 'downloading' && update.kind !== 'downloadPaused') {
       return;
     }
     const {release, id} = update;
+    const wasPaused = update.kind === 'downloadPaused';
     let cancelled = false;
     const poll = async () => {
       try {
@@ -319,6 +324,27 @@ export function SettingsScreen({
         if (item.status === 'failed') {
           setUpdate({kind: 'downloadFailed', release, reason: item.reason ?? '未知原因'});
           setProgress(null);
+          return;
+        }
+        if (item.status === 'paused') {
+          if (!wasPaused) {
+            // Usually "waiting for network": surface the pause instead of
+            // showing 下载中 forever; it auto-resumes when the cause clears.
+            if (loadPrefs().notificationsEnabled && notifications != null) {
+              notifications.notify(
+                7,
+                '更新下载已暂停',
+                `${item.reason ?? '已暂停'}，网络恢复后会自动继续，也可点开应用处理`,
+              );
+            }
+            setUpdate({kind: 'downloadPaused', release, id, reason: item.reason});
+            setProgress(null);
+          }
+          return;
+        }
+        if (wasPaused) {
+          // Moved back to pending/running on its own — follow along.
+          setUpdate({kind: 'downloading', release, id});
           return;
         }
         setProgress({bytes: item.bytesSoFar, total: item.totalBytes});
@@ -752,7 +778,11 @@ export function SettingsScreen({
           </View>
           <TouchableOpacity
             style={styles.rowButton}
-            disabled={update.kind === 'checking' || update.kind === 'downloading'}
+            disabled={
+              update.kind === 'checking' ||
+              update.kind === 'downloading' ||
+              update.kind === 'downloadPaused'
+            }
             onPress={checkUpdate}>
             <Text style={styles.rowButtonText}>
               {update.kind === 'checking' ? '检查中…' : '检查更新'}
@@ -827,7 +857,7 @@ export function SettingsScreen({
             </TouchableOpacity>
           </View>
         ) : null}
-        {update.kind === 'available' || update.kind === 'downloading' || update.kind === 'downloaded' || update.kind === 'downloadFailed' ? (
+        {update.kind === 'available' || update.kind === 'downloading' || update.kind === 'downloadPaused' || update.kind === 'downloaded' || update.kind === 'downloadFailed' ? (
           <View style={{gap: 10, marginTop: 10}}>
             <Text style={font.body}>
               新版本 v{update.release.version}
@@ -872,6 +902,44 @@ export function SettingsScreen({
                       : '等待开始下载…'}
                   （进度也可在 下载管理 查看，完成后自动弹出安装）
                 </Text>
+              </View>
+            ) : null}
+            {update.kind === 'downloadPaused' ? (
+              <View style={{gap: 8}}>
+                <Text style={styles.hintWarn}>
+                  下载已暂停{update.reason ? ` · ${update.reason}` : ''}，
+                  网络恢复后会自动继续
+                </Text>
+                <View style={{flexDirection: 'row', gap: 12, alignItems: 'center'}}>
+                  <TouchableOpacity
+                    style={styles.rowButton}
+                    onPress={() => {
+                      setOpenApkError(null);
+                      resumeDownload(update.id)
+                        .then(newId =>
+                          setUpdate({kind: 'downloading', release: update.release, id: newId}),
+                        )
+                        .catch(e => {
+                          setOpenApkError(
+                            e instanceof Error && e.message ? e.message : '无法继续下载',
+                          );
+                        });
+                    }}>
+                    <Text style={styles.rowButtonText}>继续下载</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.rowButton}
+                    onPress={() => {
+                      removeDownload(update.id).catch(() => {});
+                      setUpdate({kind: 'available', release: update.release});
+                      setProgress(null);
+                    }}>
+                    <Text style={styles.rowButtonText}>取消下载</Text>
+                  </TouchableOpacity>
+                </View>
+                {openApkError != null ? (
+                  <Text style={styles.errorText}>{openApkError}</Text>
+                ) : null}
               </View>
             ) : null}
             {update.kind === 'downloaded' ? (
@@ -933,7 +1001,7 @@ export function SettingsScreen({
         <View style={styles.row}>
           <View style={styles.rowMain}>
             <Text style={font.body}>下载管理</Text>
-            <Text style={font.faint}>应用更新与控制台文件的下载进度、取消与打开</Text>
+            <Text style={font.faint}>应用更新与控制台文件的下载进度、暂停继续、取消与打开</Text>
           </View>
           <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
         </View>

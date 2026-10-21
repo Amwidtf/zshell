@@ -14,6 +14,7 @@ import {
   openDownloadsUi,
   queryDownloads,
   removeDownload,
+  resumeDownload,
   retryDownload,
 } from '../downloads';
 import {colors, font} from '../theme';
@@ -61,7 +62,7 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
               `${formatBytes(item.bytesSoFar)} / ${formatBytes(item.totalBytes)}`
           : `下载中 · ${formatBytes(item.bytesSoFar)}`;
       case 'paused':
-        return '已暂停';
+        return `已暂停${item.reason && item.reason !== '已暂停' ? ' · ' + item.reason : ''}`;
       case 'successful':
         // On success bytesSoFar equals the final file size.
         return item.bytesSoFar > 0
@@ -126,6 +127,13 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
               {statusText(item)}
             </Text>
             <View style={styles.actions}>
+              {item.status === 'paused' ? (
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={() => act(() => resumeDownload(item.id))}>
+                  <Text style={styles.buttonText}>继续</Text>
+                </TouchableOpacity>
+              ) : null}
               {isActive(item.status) ? (
                 <TouchableOpacity
                   style={styles.button}

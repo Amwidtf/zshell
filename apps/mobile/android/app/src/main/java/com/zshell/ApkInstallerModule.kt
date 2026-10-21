@@ -173,15 +173,7 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
     // starts; drop them so retrying doesn't leave duplicate failed entries.
     metas.removeAll { it.deadReason != null }
     val request = try {
-      DownloadManager.Request(parsedUrl)
-          .setTitle(if (kind == KIND_UPDATE) "ZShell 更新" else safeName)
-          .setDescription("下载完成后可在应用内打开")
-          .setNotificationVisibility(
-              DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-          .setDestinationInExternalFilesDir(
-              reactContext, Environment.DIRECTORY_DOWNLOADS, safeName)
-          .setAllowedOverMetered(true)
-          .setAllowedOverRoaming(true)
+      buildRequest(parsedUrl, safeName, kind)
     } catch (e: Exception) {
       promise.reject("REQUEST", e.message ?: "下载请求无效", e)
       return
@@ -201,6 +193,78 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
             lastMoveAt = System.currentTimeMillis()))
     saveMeta(metas)
     promise.resolve(id.toDouble())
+  }
+
+  /** Common DownloadManager request for our own downloads. */
+  private fun buildRequest(
+      parsedUrl: Uri,
+      safeName: String,
+      kind: String
+  ): DownloadManager.Request =
+      DownloadManager.Request(parsedUrl)
+          .setTitle(if (kind == KIND_UPDATE) "ZShell 更新" else safeName)
+          .setDescription("下载完成后可在应用内打开")
+          .setNotificationVisibility(
+              DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+          .setDestinationInExternalFilesDir(
+              reactContext, Environment.DIRECTORY_DOWNLOADS, safeName)
+          .setAllowedOverMetered(true)
+          .setAllowedOverRoaming(true)
+
+  /**
+   * Continue a paused download. DownloadManager has no public resume API,
+   * so the entry is re-enqueued from the original URL (our metadata first,
+   * the download's own COLUMN_URI otherwise), yielding a new id.
+   */
+  @ReactMethod
+  fun resumeDownload(id: Double, promise: Promise) {
+    val lid = id.toLong()
+    var cursorUri: String? = null
+    var paused = false
+    try {
+      val cursor = dm.query(DownloadManager.Query().setFilterById(lid))
+      if (cursor.moveToFirst()) {
+        val uriIdx = cursor.getColumnIndex(DownloadManager.COLUMN_URI)
+        if (uriIdx >= 0) {
+          cursorUri = cursor.getString(uriIdx)
+        }
+        val stIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+        paused = stIdx >= 0 && cursor.getInt(stIdx) == DownloadManager.STATUS_PAUSED
+      }
+      cursor.close()
+    } catch (e: Exception) {
+      promise.reject("RESUME", "无法读取该下载", e)
+      return
+    }
+    val meta = loadMeta().firstOrNull { it.id == lid }
+    val url = meta?.url?.takeIf { it.isNotEmpty() } ?: cursorUri
+    if (!paused) {
+      promise.reject("RESUME", "仅暂停中的下载可以继续")
+      return
+    }
+    if (url.isNullOrEmpty()) {
+      promise.reject("RESUME", "该下载无法继续，请删除后重试")
+      return
+    }
+    val safeName =
+        meta?.fileName?.takeIf { it.isNotEmpty() }
+            ?: sanitizeFileName(url.substringAfterLast('/').ifEmpty { "download" })
+    val kind = meta?.kind ?: KIND_FILE
+    try {
+      dm.remove(lid)
+      val newId = dm.enqueue(buildRequest(Uri.parse(url), safeName, kind))
+      saveMeta(
+          loadMeta().filterNot { it.id == lid } +
+              DownloadMeta(
+                  id = newId,
+                  fileName = safeName,
+                  url = url,
+                  kind = kind,
+                  lastMoveAt = System.currentTimeMillis()))
+      promise.resolve(newId.toDouble())
+    } catch (e: Exception) {
+      promise.reject("RESUME", e.message ?: "无法继续该下载", e)
+    }
   }
 
   /**
@@ -272,7 +336,10 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
         when (status) {
           DownloadManager.STATUS_PENDING -> item.putString("status", "pending")
           DownloadManager.STATUS_RUNNING -> item.putString("status", "running")
-          DownloadManager.STATUS_PAUSED -> item.putString("status", "paused")
+          DownloadManager.STATUS_PAUSED -> {
+            item.putString("status", "paused")
+            item.putString("reason", pauseReasonText(reason))
+          }
           DownloadManager.STATUS_SUCCESSFUL -> item.putString("status", "successful")
           DownloadManager.STATUS_FAILED -> {
             item.putString("status", "failed")
@@ -571,6 +638,15 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       reason == DownloadManager.ERROR_CANNOT_RESUME -> "无法续传"
       reason == DownloadManager.ERROR_HTTP_DATA_ERROR -> "数据传输错误"
       else -> "原因代码 $reason"
+    }
+
+    /** Why a download is sitting in the paused state. */
+    private fun pauseReasonText(reason: Int): String = when (reason) {
+      DownloadManager.PAUSED_WAITING_FOR_NETWORK -> "等待网络恢复"
+      DownloadManager.PAUSED_WAITING_TO_RETRY -> "等待重试"
+      DownloadManager.PAUSED_QUEUED_FOR_WIFI -> "等待 Wi-Fi"
+      7 -> "等待设备空闲" // PAUSED_QUEUED_FOR_DEVICE is not in the public API
+      else -> "已暂停"
     }
   }
 }
