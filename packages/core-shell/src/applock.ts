@@ -76,12 +76,23 @@ export function activeSecrets(config: LockConfig): SecretKind[] {
   return kinds;
 }
 
+/** Salt length enforced by makeVerifier (matches the backup format). */
+export const LOCK_SALT_LEN = 16;
+
+/**
+ * Build a verifier from a caller-supplied salt. Salt generation is a platform
+ * concern (the app layer uses the native SecureRandom, which is async across
+ * the bridge), so this takes bytes, not an RNG callback — same convention as
+ * encryptBackup's randomSalt.
+ */
 export function makeVerifier(
   secret: string,
-  rng: (n: number) => Uint8Array,
+  salt: Uint8Array,
   iterations: number = LOCK_ITERATIONS,
 ): LockVerifier {
-  const salt = rng(16);
+  if (salt.length < LOCK_SALT_LEN) {
+    throw new Error('salt too short');
+  }
   const hash = pbkdf2Sha256(utf8Encode(secret), salt, iterations, 32);
   return {saltHex: bytesToHex(salt), hashHex: bytesToHex(hash), iterations};
 }
@@ -104,22 +115,22 @@ export function setBiometric(config: LockConfig, on: boolean): LockConfig {
 export function setPattern(
   config: LockConfig,
   secret: string,
-  rng: (n: number) => Uint8Array,
+  salt: Uint8Array,
 ): LockConfig {
   return withMethods(config, {
     ...config.methods,
-    pattern: makeVerifier(secret, rng),
+    pattern: makeVerifier(secret, salt),
   });
 }
 
 export function setPassword(
   config: LockConfig,
   secret: string,
-  rng: (n: number) => Uint8Array,
+  salt: Uint8Array,
 ): LockConfig {
   return withMethods(config, {
     ...config.methods,
-    password: makeVerifier(secret, rng),
+    password: makeVerifier(secret, salt),
   });
 }
 

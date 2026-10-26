@@ -177,20 +177,24 @@ export function SettingsScreen({
   };
 
   const finishPatternSet = (secret: string) => {
-    rng(16).then(salt => {
-      onSaveLock(setPattern(lock, secret, salt));
-      setStep({kind: 'idle'});
-      setError(null);
-    });
+    rng(16)
+      .then(salt => {
+        onSaveLock(setPattern(lock, secret, salt));
+        setStep({kind: 'idle'});
+        setError(null);
+      })
+      .catch(() => setError('保存失败：无法生成安全随机数，请重试'));
   };
 
   const finishPasswordSet = (secret: string) => {
-    rng(16).then(salt => {
-      onSaveLock(setPassword(lock, secret, salt));
-      setStep({kind: 'idle'});
-      setError(null);
-      setPasswordValue('');
-    });
+    rng(16)
+      .then(salt => {
+        onSaveLock(setPassword(lock, secret, salt));
+        setStep({kind: 'idle'});
+        setError(null);
+        setPasswordValue('');
+      })
+      .catch(() => setError('保存失败：无法生成安全随机数，请重试'));
   };
 
   const submitPasswordSet = () => {

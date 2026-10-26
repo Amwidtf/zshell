@@ -13,15 +13,13 @@ import {
   verifySecret,
 } from '../src/applock';
 
-// Deterministic RNG for tests.
-function fakeRng(seed: number) {
-  return (n: number) => {
-    const out = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      out[i] = (seed + i * 37) & 0xff;
-    }
-    return out;
-  };
+// Deterministic salts for tests (setPattern/setPassword take salt bytes).
+function fakeSalt(seed: number): Uint8Array {
+  const out = new Uint8Array(16);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = (seed + i * 37) & 0xff;
+  }
+  return out;
 }
 
 describe('applock multi-method model', () => {
@@ -33,8 +31,8 @@ describe('applock multi-method model', () => {
   });
 
   it('pattern and password can coexist and each verifies independently', () => {
-    let cfg = setPattern(emptyLockConfig(), '0158', fakeRng(1));
-    cfg = setPassword(cfg, 'hunter2', fakeRng(2));
+    let cfg = setPattern(emptyLockConfig(), '0158', fakeSalt(1));
+    cfg = setPassword(cfg, 'hunter2', fakeSalt(2));
     expect(cfg.enabled).toBe(true);
     expect(activeSecrets(cfg)).toEqual(['pattern', 'password']);
     expect(verifySecret('0158', 'pattern', cfg)).toBe(true);
@@ -48,14 +46,14 @@ describe('applock multi-method model', () => {
   it('biometric flag coexists with secrets', () => {
     let cfg = setBiometric(emptyLockConfig(), true);
     expect(cfg.enabled).toBe(true);
-    cfg = setPattern(cfg, '0158', fakeRng(3));
+    cfg = setPattern(cfg, '0158', fakeSalt(3));
     expect(cfg.methods.biometric).toBe(true);
     expect(activeSecrets(cfg)).toEqual(['pattern']);
   });
 
   it('clearing methods recomputes enabled', () => {
-    let cfg = setPattern(emptyLockConfig(), '0158', fakeRng(4));
-    cfg = setPassword(cfg, 'pw', fakeRng(5));
+    let cfg = setPattern(emptyLockConfig(), '0158', fakeSalt(4));
+    cfg = setPassword(cfg, 'pw', fakeSalt(5));
     expect(clearMethod(cfg, 'pattern').enabled).toBe(true);
     const afterBoth = clearMethod(clearMethod(cfg, 'pattern'), 'password');
     expect(afterBoth.enabled).toBe(false);
@@ -63,15 +61,15 @@ describe('applock multi-method model', () => {
   });
 
   it('same secret set twice gets different salts', () => {
-    const a = setPattern(emptyLockConfig(), '0158', fakeRng(6));
-    const b = setPattern(emptyLockConfig(), '0158', fakeRng(7));
+    const a = setPattern(emptyLockConfig(), '0158', fakeSalt(6));
+    const b = setPattern(emptyLockConfig(), '0158', fakeSalt(7));
     expect(a.methods.pattern!.hashHex).not.toBe(b.methods.pattern!.hashHex);
   });
 
   it('serializes / deserializes round-trip', () => {
     let cfg = setBiometric(emptyLockConfig(), true);
-    cfg = setPattern(cfg, '0158', fakeRng(8));
-    cfg = setPassword(cfg, 'pw', fakeRng(9));
+    cfg = setPattern(cfg, '0158', fakeSalt(8));
+    cfg = setPassword(cfg, 'pw', fakeSalt(9));
     const restored = deserializeLockConfig(serializeLockConfig(cfg))!;
     expect(restored).toEqual(cfg);
     expect(verifySecret('0158', 'pattern', restored)).toBe(true);
