@@ -138,6 +138,19 @@ export function clearMethod(config: LockConfig, kind: SecretKind): LockConfig {
   return withMethods(config, {...config.methods, [kind]: null});
 }
 
+/**
+ * Install a precomputed verifier (e.g. hashed off the JS thread via the
+ * platform's native PBKDF2). Pure config manipulation; pairing with
+ * makeVerifier covers the same paths as setPattern/setPassword.
+ */
+export function installVerifier(
+  config: LockConfig,
+  kind: SecretKind,
+  verifier: LockVerifier,
+): LockConfig {
+  return withMethods(config, {...config.methods, [kind]: verifier});
+}
+
 export function verifySecret(
   secret: string,
   kind: SecretKind,

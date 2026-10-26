@@ -5,6 +5,8 @@ import {
   deserializeLockConfig,
   emptyLockConfig,
   hasActiveMethod,
+  installVerifier,
+  makeVerifier,
   patternToString,
   serializeLockConfig,
   setBiometric,
@@ -64,6 +66,16 @@ describe('applock multi-method model', () => {
     const a = setPattern(emptyLockConfig(), '0158', fakeSalt(6));
     const b = setPattern(emptyLockConfig(), '0158', fakeSalt(7));
     expect(a.methods.pattern!.hashHex).not.toBe(b.methods.pattern!.hashHex);
+  });
+
+  it('installVerifier accepts a precomputed verifier and still verifies', () => {
+    // Path used by the app when the hash is computed off the JS thread.
+    const verifier = makeVerifier('hunter2', fakeSalt(10));
+    const cfg = installVerifier(emptyLockConfig(), 'password', verifier);
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.methods.password).toEqual(verifier);
+    expect(verifySecret('hunter2', 'password', cfg)).toBe(true);
+    expect(installVerifier(cfg, 'password', verifier).createdAt).toBe(cfg.createdAt);
   });
 
   it('serializes / deserializes round-trip', () => {

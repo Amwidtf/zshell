@@ -20,17 +20,16 @@ import {
   encryptBackup,
   formatBytes,
   formatPercent,
+  installVerifier,
   isNewer as isNewerVersion,
   LockConfig,
   MachineRecord,
   patternToString,
   ReleaseInfo,
-  setPassword,
-  setPattern,
   setBiometric,
-  verifySecret,
 } from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
+import {buildLockVerifier, verifySecretAsync} from '../lockcrypto';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {MarkdownText} from '../components/MarkdownText';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
@@ -167,34 +166,38 @@ export function SettingsScreen({
     secret: string,
     action: () => void,
   ) => {
-    if (verifySecret(secret, kind, lock)) {
-      action();
-      setStep({kind: 'idle'});
-      setError(null);
-    } else {
-      setError('验证失败');
-    }
+    verifySecretAsync(secret, kind, lock).then(ok => {
+      if (ok) {
+        action();
+        setStep({kind: 'idle'});
+        setError(null);
+      } else {
+        setError('验证失败');
+      }
+    });
   };
 
   const finishPatternSet = (secret: string) => {
     rng(16)
-      .then(salt => {
-        onSaveLock(setPattern(lock, secret, salt));
+      .then(salt => buildLockVerifier(secret, salt))
+      .then(verifier => {
+        onSaveLock(installVerifier(lock, 'pattern', verifier));
         setStep({kind: 'idle'});
         setError(null);
       })
-      .catch(() => setError('保存失败：无法生成安全随机数，请重试'));
+      .catch(() => setError('保存失败：无法生成安全随机数或计算哈希，请重试'));
   };
 
   const finishPasswordSet = (secret: string) => {
     rng(16)
-      .then(salt => {
-        onSaveLock(setPassword(lock, secret, salt));
+      .then(salt => buildLockVerifier(secret, salt))
+      .then(verifier => {
+        onSaveLock(installVerifier(lock, 'password', verifier));
         setStep({kind: 'idle'});
         setError(null);
         setPasswordValue('');
       })
-      .catch(() => setError('保存失败：无法生成安全随机数，请重试'));
+      .catch(() => setError('保存失败：无法生成安全随机数或计算哈希，请重试'));
   };
 
   const submitPasswordSet = () => {

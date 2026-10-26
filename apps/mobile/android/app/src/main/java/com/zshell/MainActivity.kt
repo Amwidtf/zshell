@@ -35,6 +35,13 @@ class MainActivity : ReactActivity() {
    */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    // FLAG_SECURE: the console mirrors the user's own machine screens and the
+    // lock holds machine credentials, so keep window contents out of the
+    // recents/task-switcher preview and off screenshots. Trade-off: the user
+    // also cannot screenshot inside the app (standard for banking-style apps).
+    window.setFlags(
+        android.view.WindowManager.LayoutParams.FLAG_SECURE,
+        android.view.WindowManager.LayoutParams.FLAG_SECURE)
     val content = findViewById<android.view.View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
       val bars = insets.getInsets(
