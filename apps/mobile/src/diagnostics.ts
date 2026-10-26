@@ -29,3 +29,8 @@ export function clearDiag(): void {
   diag().clear();
   store.setString(KEY, diag().toJSON());
 }
+
+/** Serialized size of the persisted timeline, in bytes (for 数据管理). */
+export function diagSize(): number {
+  return (store.getString(KEY) as string | null)?.length ?? 0;
+}

@@ -14,6 +14,7 @@ import {
 } from '@zshell/core-shell';
 import {ConsoleScreen} from './src/screens/ConsoleScreen';
 import {ConsentGate} from './src/screens/ConsentGate';
+import {DataManageScreen} from './src/screens/DataManageScreen';
 import {DiagnosticsScreen} from './src/screens/DiagnosticsScreen';
 import {DownloadsScreen} from './src/screens/DownloadsScreen';
 import {LockScreen} from './src/screens/LockScreen';
@@ -36,6 +37,7 @@ type Screen =
   | {name: 'settings'}
   | {name: 'permissions'}
   | {name: 'downloads'}
+  | {name: 'datamanage'}
   | {name: 'diagnostics'}
   | {name: 'console'; machineId: string};
 
@@ -270,6 +272,7 @@ function App(): React.JSX.Element {
           onBack={pop}
           onOpenPermissions={() => push({name: 'permissions'})}
           onOpenDownloads={() => push({name: 'downloads'})}
+          onOpenDataManage={() => push({name: 'datamanage'})}
           onOpenDiagnostics={() => push({name: 'diagnostics'})}
         />
       );
@@ -279,6 +282,9 @@ function App(): React.JSX.Element {
       break;
     case 'downloads':
       screen = <DownloadsScreen onBack={pop} />;
+      break;
+    case 'datamanage':
+      screen = <DataManageScreen machines={machines} lock={lock} onBack={pop} />;
       break;
     case 'diagnostics':
       screen = <DiagnosticsScreen onBack={pop} />;

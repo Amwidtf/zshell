@@ -80,9 +80,21 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
       </TouchableOpacity>
       <Text style={styles.pageTitle}>下载管理</Text>
       <Text style={font.faint}>
-        更新包存在应用私有目录，安装后自动清理；控制台里下载的文件存在系统
-        公共下载目录，可用「存储位置」跳转查看
+        更新包与控制台文件都下载到应用私有目录，卸载应用时随之删除；可在
+        系统下载列表查看全部记录
       </Text>
+
+      <TouchableOpacity style={styles.card} onPress={() => act(() => openDownloadsUi())}>
+        <View style={styles.headRow}>
+          <View style={{flex: 1, gap: 2}}>
+            <Text style={font.body}>存储位置 · 系统下载列表</Text>
+            <Text style={font.faint}>
+              跳转到系统的「下载」应用查看文件与应用私有目录路径
+            </Text>
+          </View>
+          <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
+        </View>
+      </TouchableOpacity>
 
       {error != null ? <Text style={styles.errorText}>{error}</Text> : null}
       {actionError != null ? <Text style={styles.errorText}>{actionError}</Text> : null}
@@ -150,13 +162,6 @@ export function DownloadsScreen({onBack}: {onBack: () => void}) {
                       {item.kind === 'update' ? '安装' : '打开'}
                     </Text>
                   </TouchableOpacity>
-                  {item.kind === 'file' ? (
-                    <TouchableOpacity
-                      style={styles.button}
-                      onPress={() => act(() => openDownloadsUi())}>
-                      <Text style={styles.buttonText}>存储位置</Text>
-                    </TouchableOpacity>
-                  ) : null}
                   <TouchableOpacity
                     style={styles.button}
                     onPress={() => act(() => removeDownload(item.id))}>

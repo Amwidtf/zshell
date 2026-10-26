@@ -6,12 +6,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {activeSecrets, LockConfig, patternToString} from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
+import {SecretInput} from '../components/SecretInput';
 import {verifySecretAsync} from '../securekdf';
 import {PatternPad} from '../PatternPad';
 import {colors, font} from '../theme';
@@ -175,11 +175,8 @@ export function LockScreen({config, onUnlock}: LockScreenProps) {
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{width: '100%', marginTop: 40}}>
-          <TextInput
-            style={styles.input}
+          <SecretInput
             placeholder="密码"
-            placeholderTextColor={colors.textFaint}
-            secureTextEntry
             autoFocus
             value={secretInput}
             onChangeText={setSecretInput}
@@ -234,16 +231,6 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
   content: {flexGrow: 1, alignItems: 'center', padding: 24, paddingTop: 80},
   title: {...font.title, marginBottom: 8},
-  input: {
-    width: '100%',
-    backgroundColor: colors.bgInput,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: colors.text,
-    fontSize: 16,
-    marginTop: 16,
-  },
   button: {
     backgroundColor: colors.accent,
     borderRadius: 10,

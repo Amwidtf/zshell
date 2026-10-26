@@ -521,6 +521,16 @@ class ApkInstallerModule(private val reactContext: ReactApplicationContext) :
       if (!name.startsWith(UPDATE_PREFIX) || !name.endsWith(".apk")) {
         return
       }
+      // Removing the DownloadManager record also deletes its file — and the
+      // record is what keeps a long-installed update visible in 下载管理.
+      val metas = loadMeta().toMutableList()
+      val doomed = metas.filter { it.kind == KIND_UPDATE && it.fileName == name }
+      if (doomed.isNotEmpty()) {
+        dm.remove(*doomed.map { it.id }.toLongArray())
+        metas.removeAll { it.kind == KIND_UPDATE && it.fileName == name }
+        saveMeta(metas)
+      }
+      // Fallback for files whose record is already gone.
       val dir = reactContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return
       val target = File(dir, name)
       if (target.exists()) {

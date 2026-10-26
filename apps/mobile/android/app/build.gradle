@@ -92,8 +92,8 @@ android {
         applicationId "com.zshell"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 18
-        versionName "0.1.0-beta.9"
+        versionCode 19
+        versionName "0.1.0-beta.10"
     }
 
     // Artifact naming: ZShell-<version>-[abi]-<buildType>.apk. With ABI splits

@@ -52,4 +52,23 @@ class MainActivity : ReactActivity() {
       WindowInsetsCompat.CONSUMED
     }
   }
+
+  /**
+   * Snapshot defense: the recents/task-switcher preview is captured around
+   * pause time. The JS-thread relock renders asynchronously — far too late
+   * for that snapshot — and some ROMs ignore FLAG_SECURE for previews, so an
+   * unlocked screen could still leak into the card right after unlocking.
+   * Hiding the window synchronously in onPause blanks it no matter what the
+   * ROM does; onResume brings it back (the lock screen has re-rendered by
+   * then when the app-lock is enabled).
+   */
+  override fun onPause() {
+    super.onPause()
+    window.decorView.visibility = android.view.View.INVISIBLE
+  }
+
+  override fun onResume() {
+    super.onResume()
+    window.decorView.visibility = android.view.View.VISIBLE
+  }
 }

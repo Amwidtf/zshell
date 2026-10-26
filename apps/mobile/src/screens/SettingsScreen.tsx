@@ -30,6 +30,7 @@ import {biometricAuth} from '../biometric';
 import {buildLockVerifier, encryptBackupAsync, decryptBackupAsync, verifySecretAsync} from '../securekdf';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {MarkdownText} from '../components/MarkdownText';
+import {SecretInput} from '../components/SecretInput';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {AppPrefs, loadPrefs, notifications, savePrefs} from '../notifications';
 import {PatternPad} from '../PatternPad';
@@ -75,6 +76,7 @@ interface SettingsScreenProps {
   onBack: () => void;
   onOpenPermissions: () => void;
   onOpenDownloads: () => void;
+  onOpenDataManage: () => void;
   onOpenDiagnostics: () => void;
 }
 
@@ -104,6 +106,7 @@ export function SettingsScreen({
   onBack,
   onOpenPermissions,
   onOpenDownloads,
+  onOpenDataManage,
   onOpenDiagnostics,
 }: SettingsScreenProps) {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -546,12 +549,8 @@ export function SettingsScreen({
             <Text style={font.dim}>
               {step.first == null ? '设置解锁密码（至少 4 位）' : '请再输入一次确认'}
             </Text>
-            <TextInput
-              style={styles.input}
+            <SecretInput
               placeholder={step.first == null ? '输入密码' : '再次输入密码'}
-              placeholderTextColor={colors.textFaint}
-              secureTextEntry
-              returnKeyType="done"
               value={password}
               onChangeText={setPasswordValue}
               onSubmitEditing={submitPasswordSet}
@@ -595,12 +594,8 @@ export function SettingsScreen({
             ) : null}
             {lock.methods.password != null ? (
               <>
-                <TextInput
-                  style={styles.input}
+                <SecretInput
                   placeholder="当前密码"
-                  placeholderTextColor={colors.textFaint}
-                  secureTextEntry
-                  returnKeyType="done"
                   value={password}
                   onChangeText={setPasswordValue}
                   onSubmitEditing={() =>
@@ -660,19 +655,13 @@ export function SettingsScreen({
             <Text style={font.dim}>
               设置备份口令（至少 6 位，只用于加密，应用本身不保存它）
             </Text>
-            <TextInput
-              style={styles.input}
+            <SecretInput
               placeholder="备份口令"
-              placeholderTextColor={colors.textFaint}
-              secureTextEntry
               value={backupPass}
               onChangeText={setBackupPass}
             />
-            <TextInput
-              style={styles.input}
+            <SecretInput
               placeholder="再输入一次"
-              placeholderTextColor={colors.textFaint}
-              secureTextEntry
               value={backupPass2}
               onChangeText={setBackupPass2}
             />
@@ -702,11 +691,8 @@ export function SettingsScreen({
               value={restoreBlob}
               onChangeText={setRestoreBlob}
             />
-            <TextInput
-              style={styles.input}
+            <SecretInput
               placeholder="备份口令"
-              placeholderTextColor={colors.textFaint}
-              secureTextEntry
               value={restorePass}
               onChangeText={setRestorePass}
             />
@@ -1018,6 +1004,17 @@ export function SettingsScreen({
           <View style={styles.rowMain}>
             <Text style={font.body}>下载管理</Text>
             <Text style={font.faint}>应用更新与控制台文件的下载进度、暂停继续、取消与打开</Text>
+          </View>
+          <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* ================= 数据管理（二级页面） ================= */}
+      <TouchableOpacity style={styles.card} onPress={onOpenDataManage}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>数据管理</Text>
+            <Text style={font.faint}>本机数据占用环形图、日志与下载缓存清理，安全配置受保护</Text>
           </View>
           <Text style={{color: colors.textFaint, fontSize: 18}}>›</Text>
         </View>
