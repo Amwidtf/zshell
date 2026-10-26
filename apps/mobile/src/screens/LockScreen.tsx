@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import {activeSecrets, LockConfig, patternToString} from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
-import {verifySecretAsync} from '../lockcrypto';
+import {verifySecretAsync} from '../securekdf';
 import {PatternPad} from '../PatternPad';
 import {colors, font} from '../theme';
 

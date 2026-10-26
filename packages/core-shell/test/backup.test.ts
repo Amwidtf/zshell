@@ -1,5 +1,14 @@
 import {describe, expect, it} from 'vitest';
-import {decryptBackup, encryptBackup} from '../src/backup';
+import {
+  backupKeysFromMaster,
+  decryptBackup,
+  decryptBackupWithKeys,
+  deriveBackupKeys,
+  encryptBackup,
+  encryptBackupWithKeys,
+  parseBackupBlob,
+} from '../src/backup';
+import {pbkdf2Sha256, utf8Encode} from '../src/crypto';
 import {DiagnosticsLog} from '../src/diagnostics';
 import {MachineRegistry} from '../src/machine';
 import {isPrerelease} from '../src/update';
@@ -58,6 +67,39 @@ describe('backup encryption', () => {
     const b = encryptBackup(payload, 'pw', new Uint8Array(16).fill(9));
     expect(a).not.toBe(b);
     expect(decryptBackup(b, 'pw')).toBe(payload);
+  });
+
+  // The app derives the PBKDF2 master natively and reuses the KDF-free
+  // stages; these cross-path cases pin the split API to the legacy one.
+  it('splits cleanly: keys-from-master path decrypts sync-encrypted blobs', () => {
+    const payload = registryJson();
+    const blob = encryptBackup(payload, 'pw', SALT);
+    const parsed = parseBackupBlob(blob);
+    expect(parsed).not.toBeNull();
+    // Native-equivalent: derive master (64 bytes) then the key schedule.
+    const master = pbkdf2Sha256(utf8Encode('pw'), parsed!.salt, 20000, 64);
+    const json = decryptBackupWithKeys(blob, backupKeysFromMaster(master));
+    expect(json).toBe(payload);
+    expect(deriveBackupKeys('pw', parsed!.salt)).toEqual(
+      backupKeysFromMaster(master),
+    );
+  });
+
+  it('encryptBackupWithKeys output decrypts via the sync path', () => {
+    const payload = registryJson();
+    const blob = encryptBackupWithKeys(
+      payload,
+      deriveBackupKeys('pw', SALT),
+      SALT,
+    );
+    expect(decryptBackup(blob, 'pw')).toBe(payload);
+    expect(decryptBackup(blob, 'other')).toBeNull();
+  });
+
+  it('parseBackupBlob rejects malformed shapes', () => {
+    expect(parseBackupBlob('')).toBeNull();
+    expect(parseBackupBlob('ZSBK1.YQ.YQ.YQ')).toBeNull();
+    expect(parseBackupBlob('OTHER.@@@@@@@@@@@@@@@@@@@.YQ.YQ.YQ.YQ')).toBeNull();
   });
 });
 

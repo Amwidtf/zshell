@@ -25,6 +25,15 @@ const ITERATIONS = 20000;
 const PREFIX = 'ZSBK1';
 const SALT_LEN = 16;
 
+/** Exposed for the app-side async path (native PBKDF2 bridge). */
+export const BACKUP_ITERATIONS = ITERATIONS;
+
+/** Symmetric keys for one backup blob, derived from the PBKDF2 master. */
+export interface BackupKeys {
+  encKey: Uint8Array;
+  macKey: Uint8Array;
+}
+
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   const out = new Uint8Array(a.length + b.length);
   out.set(a);
@@ -32,12 +41,50 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
-function deriveKeys(passphrase: string, salt: Uint8Array) {
-  const master = pbkdf2Sha256(utf8Encode(passphrase), salt, ITERATIONS, 64);
+/** Key schedule from the (expensive) PBKDF2 master — pure and cheap. */
+export function backupKeysFromMaster(master: Uint8Array): BackupKeys {
   return {
     encKey: hmacSha256(master, utf8Encode('zshell-backup/enc')),
     macKey: hmacSha256(master, utf8Encode('zshell-backup/mac')),
   };
+}
+
+/**
+ * Derive backup keys from the passphrase. This is the expensive PBKDF2 step
+ * that blocks the JS thread for seconds — the app layer runs the same KDF
+ * natively (securekdf.ts) and only uses this sync path as a fallback.
+ */
+export function deriveBackupKeys(
+  passphrase: string,
+  salt: Uint8Array,
+): BackupKeys {
+  const master = pbkdf2Sha256(utf8Encode(passphrase), salt, ITERATIONS, 64);
+  return backupKeysFromMaster(master);
+}
+
+/** Parsed blob fields; exposes the salt so keys can be derived separately. */
+export interface ParsedBackupBlob {
+  saltB64: string;
+  salt: Uint8Array;
+}
+
+/** Shape-check a ZSBK1 blob and pull out its salt; null when malformed. */
+export function parseBackupBlob(raw: string): ParsedBackupBlob | null {
+  const parts = raw.trim().split('.');
+  if (parts.length !== 4 || parts[0] !== PREFIX) {
+    return null;
+  }
+  try {
+    const salt = base64ToBytes(parts[1]);
+    const ct = base64ToBytes(parts[2]);
+    const tag = base64ToBytes(parts[3]);
+    if (salt.length !== SALT_LEN || tag.length !== 32 || ct.length === 0) {
+      return null;
+    }
+    return {saltB64: parts[1], salt};
+  } catch {
+    return null;
+  }
 }
 
 function keystream(key: Uint8Array, length: number): Uint8Array {
@@ -78,7 +125,19 @@ export function encryptBackup(
     throw new Error('salt too short');
   }
   const salt = randomSalt.slice(0, SALT_LEN);
-  const {encKey, macKey} = deriveKeys(passphrase, salt);
+  return encryptBackupWithKeys(payloadJson, deriveBackupKeys(passphrase, salt), salt);
+}
+
+/** KDF-free encrypt stage: caller supplies keys (derived wherever it likes). */
+export function encryptBackupWithKeys(
+  payloadJson: string,
+  keys: BackupKeys,
+  salt: Uint8Array,
+): string {
+  if (salt.length !== SALT_LEN) {
+    throw new Error('salt too short');
+  }
+  const {encKey, macKey} = keys;
   const plain = utf8Encode(payloadJson);
   const ks = keystream(encKey, plain.length);
   const ct = new Uint8Array(plain.length);
@@ -95,18 +154,29 @@ export function encryptBackup(
  * the passphrase is wrong / the blob is damaged or tampered with.
  */
 export function decryptBackup(blob: string, passphrase: string): string | null {
+  const parsed = parseBackupBlob(blob);
+  if (parsed == null) {
+    return null;
+  }
+  return decryptBackupWithKeys(blob, deriveBackupKeys(passphrase, parsed.salt));
+}
+
+/** KDF-free decrypt stage: caller supplies keys (derived wherever it likes). */
+export function decryptBackupWithKeys(
+  blob: string,
+  keys: BackupKeys,
+): string | null {
   const parts = blob.trim().split('.');
   if (parts.length !== 4 || parts[0] !== PREFIX) {
     return null;
   }
   try {
-    const salt = base64ToBytes(parts[1]);
     const ct = base64ToBytes(parts[2]);
     const tag = base64ToBytes(parts[3]);
-    if (salt.length !== SALT_LEN || tag.length !== 32 || ct.length === 0) {
+    if (tag.length !== 32 || ct.length === 0) {
       return null;
     }
-    const {encKey, macKey} = deriveKeys(passphrase, salt);
+    const {encKey, macKey} = keys;
     const expect = hmacSha256(macKey, concat(utf8Encode(`${PREFIX}.${parts[1]}`), ct));
     if (!timingSafeEqual(expect, tag)) {
       return null;

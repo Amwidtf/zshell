@@ -16,8 +16,6 @@ import {
   activeSecrets,
   base64ToBytes,
   clearMethod,
-  decryptBackup,
-  encryptBackup,
   formatBytes,
   formatPercent,
   installVerifier,
@@ -29,7 +27,7 @@ import {
   setBiometric,
 } from '@zshell/core-shell';
 import {biometricAuth} from '../biometric';
-import {buildLockVerifier, verifySecretAsync} from '../lockcrypto';
+import {buildLockVerifier, encryptBackupAsync, decryptBackupAsync, verifySecretAsync} from '../securekdf';
 import {LegalDocModal} from '../components/LegalDocModal';
 import {MarkdownText} from '../components/MarkdownText';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
@@ -257,16 +255,27 @@ export function SettingsScreen({
       exportedAt: Date.now(),
       machines,
     });
-    const blob = encryptBackup(payload, backupPass, await rng(16));
-    setBackupBlob(blob);
+    try {
+      const blob = await encryptBackupAsync(payload, backupPass, await rng(16));
+      setBackupBlob(blob);
+    } catch {
+      setError('备份失败：无法生成加密数据，请重试');
+      return;
+    }
     setBackupPass('');
     setBackupPass2('');
   };
 
-  const doRestoreBackup = () => {
+  const doRestoreBackup = async () => {
     setError(null);
     setRestoreResult(null);
-    const json = decryptBackup(restoreBlob.trim(), restorePass);
+    let json: string | null;
+    try {
+      json = await decryptBackupAsync(restoreBlob.trim(), restorePass);
+    } catch {
+      setError('解密失败：口令不对，或备份内容损坏');
+      return;
+    }
     if (json == null) {
       setError('解密失败：口令不对，或备份内容损坏');
       return;
