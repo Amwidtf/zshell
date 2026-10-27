@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  Alert,
   AppState,
   StyleSheet,
   Text,
@@ -62,6 +63,12 @@ interface ConsoleScreenProps {
    * means signed out, staying on /devices/ means signed in).
    */
   onLoginState?: (state: MachineLoginState) => void;
+  /**
+   * DSH only: accept (true) or revoke (false) the machine's untrusted TLS
+   * certificate. Accepting reloads the console with certificate errors
+   * bypassed for this origin.
+   */
+  onSetTrustSsl?: (trust: boolean) => void;
 }
 
 /**
@@ -69,7 +76,7 @@ interface ConsoleScreenProps {
  * (matchMedia fix etc.) is injected before any page script runs; everything
  * else — relay WSS, pairing handshake — is done by the official page itself.
  */
-export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads, onLoginState}: ConsoleScreenProps) {
+export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads, onLoginState, onSetTrustSsl}: ConsoleScreenProps) {
   const webviewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -121,6 +128,25 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
   };
 
   const brand = hostLabel(machine.credentials);
+  // DSH remotes have no relay WebSocket for the observer patch to watch —
+  // status is derived from page loads instead (connecting / connected /
+  // disconnected), tracked via a synchronous ref to dodge event-order races.
+  const isDsh = machine.credentials.kind === 'dsh';
+  const dshLoadFailedRef = useRef(false);
+  // One SSL trust prompt per console session (auto-reload must not re-ask).
+  const sslPromptShownRef = useRef(false);
+
+  // Trust granted mid-session → retry immediately with the bypass enabled.
+  const trustedRef = useRef(machine.trustSelfSigned === true);
+  useEffect(() => {
+    const trusted = machine.trustSelfSigned === true;
+    const justTrusted = trusted && !trustedRef.current;
+    trustedRef.current = trusted;
+    if (justTrusted) {
+      logDiag('ssl-trust-reload');
+      reload();
+    }
+  }, [machine.trustSelfSigned]);
 
   const handleBridgeMessage = useCallback(
     (event: WebViewMessageEvent) => {
@@ -269,6 +295,18 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         originWhitelist={['*']}
         style={styles.webview}
         containerStyle={styles.webview}
+        // DSH self-hosted origins: user-trusted untrusted certificates and
+        // an optional reverse-proxy HTTP Basic credential (patched webview
+        // prop; both only ever set for dsh machines).
+        proceedOnSslError={isDsh && machine.trustSelfSigned === true}
+        basicAuthCredential={
+          isDsh && machine.basicAuth != null
+            ? {
+                username: machine.basicAuth.username,
+                password: machine.basicAuth.password,
+              }
+            : undefined
+        }
         // Kimi Code 登录（auth.kimi.com）经 window.open 发起，必须放行
         // 多窗口事件；onOpenWindow 把目标页导航回同一个 WebView。
         setSupportMultipleWindows
@@ -288,11 +326,54 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         }}
         onLoadStart={() => {
           setLoadFailed(false);
+          dshLoadFailedRef.current = false;
+          // DSH: do NOT reset status to 'connecting' here — after a failed
+          // load Android fires another onPageStarted for its built-in error
+          // page, which would erase the 'disconnected' the error just set.
+          // ('connecting' comes from mount/reload instead.)
           logDiag('page-load-start');
+        }}
+        onLoadEnd={() => {
+          if (!isDsh) {
+            return;
+          }
+          setStatus(dshLoadFailedRef.current ? 'disconnected' : 'connected');
         }}
         onError={(e: WebViewErrorEvent) => {
           setLoadFailed(true);
-          logDiag('load-error', e.nativeEvent.description?.slice(0, 60));
+          dshLoadFailedRef.current = true;
+          if (isDsh) {
+            setStatus('disconnected');
+          }
+          const desc = e.nativeEvent.description ?? '';
+          logDiag('load-error', desc.slice(0, 60));
+          // DSH self-hosted origins often carry a private-CA / self-signed
+          // certificate the system rejects. Offer an explicit, per-machine
+          // trust decision (kept in the encrypted registry) once.
+          if (
+            isDsh &&
+            !sslPromptShownRef.current &&
+            machine.trustSelfSigned !== true &&
+            desc.startsWith('SSL error:')
+          ) {
+            sslPromptShownRef.current = true;
+            let host = machine.credentials.sid;
+            try {
+              host = new URL(machine.credentials.origin).host;
+            } catch {}
+            Alert.alert(
+              '证书不受信任',
+              `${host} 的证书不受系统信任（自签名或私有 CA 签发，自建 DSH 常见）。\n\n信任后，本应用连接该地址时将跳过证书校验。请确认地址属于你自己的设备——在不安全的网络上继续连接可能被窃听或篡改。`,
+              [
+                {text: '取消', style: 'cancel'},
+                {
+                  text: '信任并继续',
+                  style: 'destructive',
+                  onPress: () => onSetTrustSsl?.(true),
+                },
+              ],
+            );
+          }
         }}
         // The OS may kill the WebView renderer while backgrounded; rebuild
         // the page instead of leaving a dead surface.
@@ -302,6 +383,12 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
           <View style={styles.errorBox}>
             <Text style={font.dim}>控制台加载失败，多半是网络未就绪或连接中断</Text>
             <Text style={font.faint}>回到前台会自动重试，也可以现在手动重试</Text>
+            {isDsh && machine.basicAuth == null ? (
+              <Text style={font.faint}>
+                若该地址有 HTTP Basic 访问保护（401），{'\n'}
+                请返回列表长按卡片填写「访问口令」
+              </Text>
+            ) : null}
             <TouchableOpacity style={styles.retryButton} onPress={reload}>
               <Text style={{color: '#fff'}}>重试</Text>
             </TouchableOpacity>

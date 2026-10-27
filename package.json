@@ -1,6 +1,6 @@
 {
   "name": "zcode-shell",
-  "version": "0.1.0-beta.10",
+  "version": "0.1.0-beta.11",
   "private": true,
   "engines": {
     "node": ">=22",
@@ -12,7 +12,8 @@
     "packages/*"
   ],
   "patchedDependencies": {
-    "@react-native/gradle-plugin@0.82.1": "patches/rn-gradle-plugin-drop-foojay.patch"
+    "@react-native/gradle-plugin@0.82.1": "patches/rn-gradle-plugin-drop-foojay.patch",
+    "react-native-webview@13.17.0": "patches/rn-webview-proceed-on-ssl-error.patch"
   },
   "scripts": {
     "test": "vitest run",

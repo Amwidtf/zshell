@@ -25,8 +25,8 @@ interface ScanScreenProps {
 const REASON_TEXT: Record<string, string> = {
   empty: '内容为空',
   'invalid-url': '不是有效的 URL',
-  'not-https': '仅支持 https 配对地址',
-  'missing-sid': '缺少 sid 参数（不是配对二维码）',
+  'not-https': 'ZCode / Kimi Code 仅支持 https；DSH 地址须为 http(s) 根地址',
+  'missing-sid': '不是配对二维码（ZCode 缺 sid / Kimi Code 需 /devices/… / DSH 需根地址）',
   'invalid-device-path': '不是有效的 Kimi Code 设备链接',
 };
 
@@ -108,8 +108,8 @@ export function ScanScreen({onResult, onDone}: ScanScreenProps) {
           </View>
         ) : (
           <Text style={styles.tip}>
-            对准桌面端「远程控制」二维码（支持 ZCode / Kimi Code），{'\n'}
-            或从相册选择二维码截图
+            对准桌面端「远程控制」二维码（支持 ZCode / Kimi Code / DSH），{'\n'}
+            或从相册选择二维码图片
           </Text>
         )}
         <TouchableOpacity style={styles.albumButton} onPress={pickFile}>

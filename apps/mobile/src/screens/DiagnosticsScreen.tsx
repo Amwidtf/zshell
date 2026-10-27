@@ -28,6 +28,7 @@ const LABELS: Record<string, string> = {
   'network-online': '网络恢复',
   'network-offline': '网络断开',
   'load-error': '页面加载失败',
+  'ssl-trust-reload': '信任证书后重连',
   'window-open': '打开授权页',
   'login-observed': '登录状态观测',
 };

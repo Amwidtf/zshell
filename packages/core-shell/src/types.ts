@@ -13,6 +13,12 @@ export function isKnownOrigin(origin: string): boolean {
   return origin === KNOWN_ORIGINS.international || origin === KNOWN_ORIGINS.china;
 }
 
+/** True for the official ZCode console hosts, regardless of scheme. */
+export function isKnownZcodeHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return h === 'zcode.z.ai' || h === 'zcode.chatglm.site';
+}
+
 /**
  * Pairing credentials carried by the desktop QR code.
  * SECURITY: `hash` is a long-lived shared secret (base64(SHA-256(password))).
@@ -36,7 +42,8 @@ export interface PairingCredentials {
   issuedAt: number | null;
   /**
    * Product family this machine belongs to; absent means 'zcode' (records
-   * stored before multi-host support). 'kimi' = Kimi Code remote control.
+   * stored before multi-host support). 'kimi' = Kimi Code remote control,
+   * 'dsh' = DSH (DeepSeek Harness) self-hosted remote workbench.
    */
   kind?: HostKind;
   /**
@@ -52,5 +59,9 @@ export interface PairingCredentials {
   extraQuery?: string | null;
 }
 
-/** Which desktop product a pairing belongs to. */
-export type HostKind = 'zcode' | 'kimi';
+/**
+ * Which desktop product a pairing belongs to. 'dsh' carries no secret —
+ * the address itself (self-hosted LAN IP or tunnel domain) is the machine
+ * identity; any access gate is handled inside the page.
+ */
+export type HostKind = 'zcode' | 'kimi' | 'dsh';

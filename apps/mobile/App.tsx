@@ -302,6 +302,11 @@ function App(): React.JSX.Element {
               persist();
             }
           }}
+          onSetTrustSsl={trust => {
+            if (registryRef.current?.setTrustSelfSigned(base.machineId, trust)) {
+              persist();
+            }
+          }}
         />
       ) : (
         <MachineListScreen
@@ -324,6 +329,14 @@ function App(): React.JSX.Element {
           }}
           onSetMuted={(id, muted) => {
             registryRef.current?.setMuted(id, muted);
+            persist();
+          }}
+          onSetTrustSsl={(id, trust) => {
+            registryRef.current?.setTrustSelfSigned(id, trust);
+            persist();
+          }}
+          onSetBasicAuth={(id, username, password) => {
+            registryRef.current?.setBasicAuth(id, username, password);
             persist();
           }}
           onDelete={id => {
@@ -357,6 +370,14 @@ function App(): React.JSX.Element {
           }}
           onSetMuted={(id, muted) => {
             registryRef.current?.setMuted(id, muted);
+            persist();
+          }}
+          onSetTrustSsl={(id, trust) => {
+            registryRef.current?.setTrustSelfSigned(id, trust);
+            persist();
+          }}
+          onSetBasicAuth={(id, username, password) => {
+            registryRef.current?.setBasicAuth(id, username, password);
             persist();
           }}
           onDelete={id => {

@@ -25,8 +25,8 @@ interface ManualInputScreenProps {
 const REASON_TEXT: Record<string, string> = {
   empty: '请粘贴配对 URL',
   'invalid-url': '不是有效的 URL，请完整复制桌面端二维码对应的链接',
-  'not-https': '仅支持 https 配对地址',
-  'missing-sid': 'URL 中缺少 sid 参数',
+  'not-https': 'ZCode / Kimi Code 仅支持 https；DSH 地址须为 http(s) 根地址',
+  'missing-sid': '无法识别：ZCode 缺少 sid、Kimi Code 需 /devices/… 路径、DSH 需根地址',
   'invalid-device-path': '不是有效的 Kimi Code 设备链接（/devices/…）',
 };
 
@@ -51,11 +51,11 @@ export function ManualInputScreen({onSubmit, onDone}: ManualInputScreenProps) {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={font.dim}>
           粘贴桌面端「远程控制」生成的配对链接（与二维码内容相同），
-          {'\n'}支持 ZCode 与 Kimi Code：
+          {'\n'}支持 ZCode、Kimi Code 与 DSH：
         </Text>
         <TextInput
           style={styles.urlInput}
-          placeholder={'https://zcode.z.ai/remote/v4?sid=…\n或 https://code-rc.kimi.com/devices/<设备ID>/'}
+          placeholder={'https://zcode.z.ai/remote/v4?sid=…\n或 https://code-rc.kimi.com/devices/<设备ID>/\n或 http://192.168.1.5:3080（DSH）'}
           placeholderTextColor={colors.textFaint}
           value={url}
           onChangeText={setUrl}
@@ -82,6 +82,7 @@ export function ManualInputScreen({onSubmit, onDone}: ManualInputScreenProps) {
         <Text style={[font.faint, {marginTop: 16}]}>
           ZCode 格式：https://&lt;origin&gt;/remote/v4?sid=…（新版无需 hash，旧版链接同样可导入）{'\n'}
           Kimi Code 格式：https://code-rc.kimi.com/devices/&lt;设备ID&gt;/{'\n'}
+          DSH 格式：http://&lt;局域网IP&gt;:&lt;端口&gt; 或自建隧道域名（远程插件设置页的二维码链接）{'\n'}
           （桌面端二维码弹窗均可复制链接）
         </Text>
       </ScrollView>

@@ -1,4 +1,4 @@
-import {HostKind, PairingCredentials} from './types';
+import {HostKind, isKnownZcodeHost, PairingCredentials} from './types';
 
 /**
  * QR / pairing URL formats emitted by the official desktop clients:
@@ -15,6 +15,10 @@ import {HostKind, PairingCredentials} from './types';
  *   https://code-rc.kimi.com/devices/<deviceId>/?rc=1&from=kimi_code_desktop
  *     (global region serves from code-rc.kimi.ai; account login happens on
  *     the official page itself — the link carries no secret material)
+ * - DSH (DeepSeek Harness) self-hosted remote (mobile-remote plugin QR):
+ *   http://<lan-ip>:<port>  or  https://<tunnel-domain>
+ *   A bare origin at the root path — no secret material, no account system
+ *   (an optional access password, when set, is asked inside the page).
  * Described here for interoperability with the user's own paired desktop.
  */
 export type ParseFailureReason =
@@ -60,6 +64,30 @@ function parseKimiUrl(url: URL): ParseResult {
   };
 }
 
+/** True when the URL points at an origin root (no path segments). */
+function isBareRoot(url: URL): boolean {
+  return url.pathname === '/' || url.pathname === '';
+}
+
+function parseDshUrl(url: URL): ParseResult {
+  return {
+    ok: true,
+    credentials: {
+      kind: 'dsh',
+      // The address is the identity: no separate device id exists.
+      sid: url.host,
+      hash: '',
+      origin: url.origin,
+      mid: null,
+      deviceName: null,
+      appVersion: null,
+      issuedAt: null,
+      source: null,
+      extraQuery: url.search.length > 1 ? url.search.slice(1) : null,
+    },
+  };
+}
+
 export function parsePairingUrl(raw: string): ParseResult {
   const trimmed = raw == null ? '' : raw.trim();
   if (trimmed.length === 0) {
@@ -71,33 +99,51 @@ export function parsePairingUrl(raw: string): ParseResult {
   } catch {
     return fail('invalid-url');
   }
-  if (url.protocol !== 'https:') {
+  const https = url.protocol === 'https:';
+  if (!https && url.protocol !== 'http:') {
     return fail('not-https');
   }
-  if (KIMI_RC_HOSTS.has(url.hostname.toLowerCase())) {
-    return parseKimiUrl(url);
+  const isKimiHost = KIMI_RC_HOSTS.has(url.hostname.toLowerCase());
+  if (isKimiHost) {
+    // Kimi login pages must be reached over https.
+    return https ? parseKimiUrl(url) : fail('not-https');
   }
   const sid = (url.searchParams.get('sid') ?? '').trim();
-  if (sid.length === 0) {
-    return fail('missing-sid');
+  if (https && sid.length > 0) {
+    // Relay-v2 links carry no hash; legacy v1 links keep sid+hash. Accept
+    // both — whether a legacy link can still pair is decided by the page.
+    const hash = (url.searchParams.get('hash') ?? '').trim();
+    const tParam = url.searchParams.get('t');
+    const issuedAt = tParam != null && /^\d+$/.test(tParam) ? Number(tParam) : null;
+    return {
+      ok: true,
+      credentials: {
+        sid,
+        hash,
+        origin: url.origin,
+        mid: url.searchParams.get('mid'),
+        deviceName: url.searchParams.get('name'),
+        appVersion: url.searchParams.get('app_version'),
+        issuedAt,
+      },
+    };
   }
-  // Relay-v2 links carry no hash; legacy v1 links keep sid+hash. Accept both —
-  // whether a legacy link can still pair is decided by the official page.
-  const hash = (url.searchParams.get('hash') ?? '').trim();
-  const tParam = url.searchParams.get('t');
-  const issuedAt = tParam != null && /^\d+$/.test(tParam) ? Number(tParam) : null;
-  return {
-    ok: true,
-    credentials: {
-      sid,
-      hash,
-      origin: url.origin,
-      mid: url.searchParams.get('mid'),
-      deviceName: url.searchParams.get('name'),
-      appVersion: url.searchParams.get('app_version'),
-      issuedAt,
-    },
-  };
+  // DSH remotes are bare origins (mobile-remote plugin QR / self-built
+  // tunnel). Only http(S) roots without a `sid` qualify — an http URL with
+  // sid is a ZCode-style link over cleartext, and one with a path cannot be
+  // DSH; both keep the cleartext rejection.
+  if (isBareRoot(url)) {
+    if (sid.length > 0) {
+      return fail('not-https');
+    }
+    // A bare known ZCode host (either scheme) is a truncated ZCode link,
+    // not a DSH box.
+    if (isKnownZcodeHost(url.hostname)) {
+      return fail('missing-sid');
+    }
+    return parseDshUrl(url);
+  }
+  return fail(https ? 'missing-sid' : 'not-https');
 }
 
 const KIMI_SOURCE_LABELS: Record<string, string> = {
@@ -107,11 +153,14 @@ const KIMI_SOURCE_LABELS: Record<string, string> = {
 };
 
 /**
- * Human label for the host product of a pairing: 'ZCode',
+ * Human label for the host product of a pairing: 'ZCode', 'DSH',
  * 'Kimi Code Desktop' / 'Kimi Code CLI' (from the QR `from` param),
  * or 'Kimi Code' when the source is unknown.
  */
 export function hostLabel(c: PairingCredentials): string {
+  if (c.kind === 'dsh') {
+    return 'DSH';
+  }
   if (c.kind !== 'kimi') {
     return 'ZCode';
   }
@@ -174,6 +223,8 @@ export interface ConsoleUrlOptions {
  * Kimi Code: the pairing link is stable and secret-free — rebuild
  * /devices/<id>/ verbatim (reusing the QR's query so mode flags such as
  * `rc=1` are preserved) and let the page handle its own account login.
+ * DSH: the workbench lives at the origin root — no path, no params beyond
+ * whatever the QR carried (kept verbatim, same rationale as Kimi).
  * ZCode: two generations coexist, keyed by hash presence.
  * - Legacy (sid+hash): the page in production today validates
  *   sid + hash + numeric `t` together, so `t` is refreshed on every open.
@@ -183,6 +234,13 @@ export interface ConsoleUrlOptions {
 export function buildConsoleUrl(c: PairingCredentials, opts: ConsoleUrlOptions = {}): string {
   if (c.kind === 'kimi') {
     const u = new URL(`/devices/${encodeURIComponent(c.sid)}/`, c.origin);
+    if (c.extraQuery != null && c.extraQuery.length > 0) {
+      u.search = c.extraQuery;
+    }
+    return u.toString();
+  }
+  if (c.kind === 'dsh') {
+    const u = new URL('/', c.origin);
     if (c.extraQuery != null && c.extraQuery.length > 0) {
       u.search = c.extraQuery;
     }

@@ -29,8 +29,8 @@ export function ConsentGate({onAgree}: ConsentGateProps) {
       <Text style={styles.logo}>Z_</Text>
       <Text style={styles.title}>欢迎使用 ZShell</Text>
       <Text style={styles.intro}>
-        ZShell 是非官方开源的远程控制手机客户端，兼容 ZCode 与 Kimi Code
-        桌面端。开始使用前，请阅读并同意：
+        ZShell 是非官方开源的远程控制手机客户端，兼容 ZCode、Kimi Code 与
+        DSH 桌面端。开始使用前，请阅读并同意：
       </Text>
       <TouchableOpacity onPress={() => setOpenDoc(USER_AGREEMENT)}>
         <Text style={styles.link}>《用户协议与免责声明》</Text>

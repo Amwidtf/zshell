@@ -32,6 +32,13 @@ interface MachineListScreenProps {
    * shared by every Kimi machine, so this affects all of them at once.
    */
   onSignOutWebLogin: () => void;
+  /** DSH: accept / revoke the machine's untrusted TLS certificate. */
+  onSetTrustSsl: (id: string, trust: boolean) => void;
+  /**
+   * DSH: store / clear the HTTP Basic credential for a reverse-proxied
+   * origin. Empty username clears.
+   */
+  onSetBasicAuth: (id: string, username: string, password: string) => void;
 }
 
 function hostOf(record: MachineRecord): string {
@@ -47,11 +54,12 @@ type Row =
   | {type: 'sub'; favorite: boolean}
   | {type: 'machine'; m: MachineRecord};
 
-/** Group by host product (ZCode / Kimi Code), favorites-first inside each. */
+/** Group by host product (ZCode / Kimi Code / DSH), favorites-first inside each. */
 function buildRows(machines: MachineRecord[]): Row[] {
   const groups: Array<[string, MachineRecord[]]> = [
     ['ZCode', machines.filter(m => hostKindOf(m.credentials) === 'zcode')],
     ['Kimi Code', machines.filter(m => hostKindOf(m.credentials) === 'kimi')],
+    ['DSH', machines.filter(m => hostKindOf(m.credentials) === 'dsh')],
   ];
   const rows: Row[] = [];
   for (const [label, group] of groups) {
@@ -103,6 +111,8 @@ export function MachineListScreen(props: MachineListScreenProps) {
   const [renameValue, setRenameValue] = useState('');
   const [deleteArmId, setDeleteArmId] = useState<string | null>(null);
   const [signOutArm, setSignOutArm] = useState(false);
+  const [basicUser, setBasicUser] = useState('');
+  const [basicPass, setBasicPass] = useState('');
   const rows = buildRows(machines);
 
   return (
@@ -121,7 +131,8 @@ export function MachineListScreen(props: MachineListScreenProps) {
           </View>
           <Text style={font.body}>还没有配对的桌面端</Text>
           <Text style={[font.faint, {marginTop: 8, textAlign: 'center'}]}>
-            先在 ZCode 或 Kimi Code 桌面端打开「远程控制」，{'\n'}
+            先在 ZCode / Kimi Code 桌面端打开「远程控制」，{'\n'}
+            或在 DSH 桌面端开启远程插件，{'\n'}
             用下方扫码；或者直接粘贴配对链接。
           </Text>
         </ScrollView>
@@ -167,6 +178,8 @@ export function MachineListScreen(props: MachineListScreenProps) {
                     setRenameValue(item.name);
                     setDeleteArmId(null);
                     setSignOutArm(false);
+                    setBasicUser(item.basicAuth?.username ?? '');
+                    setBasicPass('');
                   }}>
                   <View style={styles.cardRow}>
                     <TouchableOpacity
@@ -214,7 +227,9 @@ export function MachineListScreen(props: MachineListScreenProps) {
                       </TouchableOpacity>
                     </View>
                     <Text style={[font.faint, {marginTop: 2}]}>
-                      sid …{item.credentials.sid.slice(-6)}
+                      {hostKindOf(item.credentials) === 'dsh'
+                        ? `地址 ${hostOf(item)}`
+                        : `sid …${item.credentials.sid.slice(-6)}`}
                     </Text>
                     <View style={styles.actionRow}>
                       <TouchableOpacity
@@ -253,6 +268,78 @@ export function MachineListScreen(props: MachineListScreenProps) {
                         </Text>
                       </TouchableOpacity>
                     </View>
+                    {hostKindOf(item.credentials) === 'dsh' ? (
+                      <View style={styles.dshBox}>
+                        <View style={styles.signOutRow}>
+                          <Text style={[font.faint, {flex: 1}]}>
+                            {item.trustSelfSigned === true
+                              ? '证书信任：已信任（连接该地址跳过证书校验）'
+                              : '证书信任：未信任（自签名地址首次连接时询问）'}
+                          </Text>
+                          {item.trustSelfSigned === true ? (
+                            <TouchableOpacity
+                              style={styles.smallButton}
+                              onPress={() => props.onSetTrustSsl(item.id, false)}>
+                              <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+                                撤销信任
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                        <Text style={[font.faint, {marginTop: 4}]}>
+                          访问口令（HTTP Basic，反向代理保护时填写；加密存储）
+                        </Text>
+                        <View style={styles.renameRow}>
+                          <TextInput
+                            style={styles.renameInput}
+                            value={basicUser}
+                            onChangeText={setBasicUser}
+                            placeholder="用户名"
+                            placeholderTextColor={colors.textFaint}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          <TextInput
+                            style={styles.renameInput}
+                            value={basicPass}
+                            onChangeText={setBasicPass}
+                            placeholder={item.basicAuth != null ? '密码（已保存，留空不改）' : '密码'}
+                            placeholderTextColor={colors.textFaint}
+                            secureTextEntry
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                        </View>
+                        <View style={styles.actionRow}>
+                          <TouchableOpacity
+                            style={styles.smallButton}
+                            onPress={() => {
+                              // 密码留空且已有口令：沿用旧密码（仅改用户名的场景）
+                              const pass =
+                                basicPass.length > 0
+                                  ? basicPass
+                                  : (item.basicAuth?.password ?? '');
+                              props.onSetBasicAuth(item.id, basicUser.trim(), pass);
+                              setBasicPass('');
+                            }}>
+                            <Text style={styles.smallButtonText}>保存口令</Text>
+                          </TouchableOpacity>
+                          {item.basicAuth != null ? (
+                            <TouchableOpacity
+                              style={styles.smallButton}
+                              onPress={() => {
+                                props.onSetBasicAuth(item.id, '', '');
+                                setBasicUser('');
+                                setBasicPass('');
+                              }}>
+                              <Text style={[styles.smallButtonText, {color: colors.danger}]}>
+                                清除口令
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                      </View>
+                    ) : null}
                     {hostKindOf(item.credentials) === 'kimi' ? (
                       <View style={styles.signOutRow}>
                         <Text style={[font.faint, {flex: 1}]}>
@@ -379,6 +466,7 @@ const styles = StyleSheet.create({
   },
   actionRow: {flexDirection: 'row', gap: 8, flexWrap: 'wrap'},
   signOutRow: {flexDirection: 'row', gap: 10, alignItems: 'center'},
+  dshBox: {gap: 8},
   smallButton: {
     backgroundColor: colors.bgInput,
     borderRadius: 8,

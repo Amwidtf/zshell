@@ -7,18 +7,18 @@
 ![react native](https://img.shields.io/badge/React%20Native-0.82-61DAFB?logo=react)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-ZCode 与 Kimi Code 桌面端「远程控制」的手机壳客户端。非官方、开源、零收集。
+ZCode、Kimi Code 与 DSH（DeepSeek Harness）桌面端「远程控制」的手机壳客户端。非官方、开源、零收集。
 
-配对有三种入口：相机扫码、粘贴链接、从相册选一张二维码截图（PNG/JPEG 解码全在本地做，没有为此引入原生依赖）。凭据进加密存储，然后在一个加固的 WebView 里使用官方控制台。ZCode 与 Kimi Code 的配对链接都只含设备标识（ZCode 旧版链接含 `sid`/`hash`，新版 relay v2 与 Kimi 一样不含密钥），账号登录在你设备上的官方页面内完成（ZCode 需登录与桌面端一致的账号），登录态由系统 WebView 保管（登录一次，重启免登录）。官方网页给不了的部分——凭据管理、应用锁、多机收藏、移动端体验修补——由这个壳补齐。
+配对有三种入口：相机扫码、粘贴链接、从相册选一张二维码截图（PNG/JPEG 解码全在本地做，没有为此引入原生依赖）。凭据进加密存储，然后在一个加固的 WebView 里使用官方控制台。ZCode 与 Kimi Code 的配对链接都只含设备标识（ZCode 旧版链接含 `sid`/`hash`，新版 relay v2 与 Kimi 一样不含密钥），账号登录在你设备上的官方页面内完成（ZCode 需登录与桌面端一致的账号），登录态由系统 WebView 保管（登录一次，重启免登录）。DSH 走自建地址（远程插件的二维码是局域网 `http://<IP>:<端口>` 或你自己的隧道域名，链接不含密钥，页面自身完成握手）。官方网页给不了的部分——凭据管理、应用锁、多机收藏、移动端体验修补——由这个壳补齐。
 
-> ⚠️ 非官方项目，与 ZCode / 智谱 AI / Moonshot AI 没有关联，也未获授权。你需要自己的、已开启「远程控制」的桌面端（Kimi Code 远程控制还需你本人的 Kimi 账号及相应会员权益）。细节见[免责声明](./docs/DISCLAIMER.md)。
+> ⚠️ 非官方项目，与 ZCode / 智谱 AI / Moonshot AI / DeepSeek 均没有关联，也未获授权。你需要自己的、已开启「远程控制」的桌面端（Kimi Code 远程控制还需你本人的 Kimi 账号及相应会员权益；DSH 需你本人部署并开启其社区远程插件）。细节见[免责声明](./docs/DISCLAIMER.md)。
 
 ## 功能
 
-- **双宿主兼容**：同一套壳管理 ZCode（zcode.z.ai / zcode.chatglm.site）与 Kimi Code（code-rc.kimi.com / code-rc.kimi.ai）两种桌面端，机器列表按宿主分类展示
-- **网页登录管理**：账号登录在应用内完成（Kimi Code 支持覆盖层授权，ZCode 在控制台页内登录），登录态由系统 WebView 保管（默认跨重启保留，可关闭），机器卡片实时显示登录状态，支持一键退出账号 / 清除全部网页登录数据
+- **多宿主兼容**：同一套壳管理 ZCode（zcode.z.ai / zcode.chatglm.site）、Kimi Code（code-rc.kimi.com / code-rc.kimi.ai）与 DSH（自建地址）三类桌面端，机器列表按宿主分类展示；DSH 的自签名 / 私有 CA 证书支持按机器显式信任（可撤销），被反向代理 HTTP Basic 保护的地址可保存访问口令（加密存储）
+- **网页登录管理**：账号登录在应用内完成（Kimi Code 支持覆盖层授权，ZCode 在控制台页内登录，DSH 无账号体系），登录态由系统 WebView 保管（默认跨重启保留，可关闭），机器卡片实时显示登录状态，支持一键退出账号 / 清除全部网页登录数据
 - **机器管理**：自定义命名、收藏置顶、手动排序；同一台机器重复配对会合并记录并更新凭据
-- **加密存储**：配对凭据（ZCode 的 sid 及路由参数，Kimi Code 的设备标识）AES 落盘，密钥托管在 Android Keystore，明文不落闪存
+- **加密存储**：配对凭据（ZCode 的 sid 及路由参数，Kimi Code 的设备标识，DSH 的自建地址）AES 落盘，密钥托管在 Android Keystore，明文不落闪存
 - **应用锁**：指纹 / 人脸、图案、密码可以同时开着，任意一种都能解锁，单一方式失灵不至于被锁在外面；后台切回自动重新上锁；生物识别可用性按设备实际能力动态检测
 - **连接状态与通知**：控制台顶部实时状态条（连接中 / 已连接 / 等待桌面端 / 已断开 / 被顶下线）；断线、被顶、Agent 等待批准时发本地通知
 - **应用内更新**：检查 GitHub Releases 新版本，下载进度、失败原因、浏览器兜底下载都有；启动时可自动检查（可关，只提醒不自动装）
