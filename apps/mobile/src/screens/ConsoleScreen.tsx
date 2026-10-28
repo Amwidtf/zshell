@@ -4,12 +4,14 @@ import {
   AppState,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {
   WebView,
   WebViewErrorEvent,
+  WebViewHttpErrorEvent,
   WebViewNavigation,
   WebViewMessageEvent,
   WebViewOpenWindowEvent,
@@ -69,6 +71,11 @@ interface ConsoleScreenProps {
    * bypassed for this origin.
    */
   onSetTrustSsl?: (trust: boolean) => void;
+  /**
+   * DSH only: store the HTTP Basic credential for this origin (encrypted,
+   * machine-scoped). Saving reloads the console. Empty username clears.
+   */
+  onSetBasicAuth?: (username: string, password: string) => void;
 }
 
 /**
@@ -76,7 +83,7 @@ interface ConsoleScreenProps {
  * (matchMedia fix etc.) is injected before any page script runs; everything
  * else — relay WSS, pairing handshake — is done by the official page itself.
  */
-export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads, onLoginState, onSetTrustSsl}: ConsoleScreenProps) {
+export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownloads, onLoginState, onSetTrustSsl, onSetBasicAuth}: ConsoleScreenProps) {
   const webviewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -147,6 +154,35 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
       reload();
     }
   }, [machine.trustSelfSigned]);
+
+  // Credential saved (e.g. from the in-console 401 prompt) → retry with it.
+  const basicAuthRef = useRef(machine.basicAuth ?? null);
+  useEffect(() => {
+    const cur = machine.basicAuth ?? null;
+    const changed = cur !== basicAuthRef.current;
+    basicAuthRef.current = cur;
+    if (changed && cur != null) {
+      logDiag('basic-auth-reload');
+      reload();
+    }
+  }, [machine.basicAuth]);
+
+  // DSH behind a reverse proxy's HTTP Basic: ask right where the 401 happens.
+  const [basicAuthPrompt, setBasicAuthPrompt] = useState(false);
+  const [basicUser, setBasicUser] = useState('');
+  const [basicPass, setBasicPass] = useState('');
+  const handleHttpError = useCallback(
+    (e: WebViewHttpErrorEvent) => {
+      if (!isDsh || e.nativeEvent.statusCode !== 401) {
+        return;
+      }
+      logDiag('http-401');
+      setBasicUser(machine.basicAuth?.username ?? '');
+      setBasicPass('');
+      setBasicAuthPrompt(true);
+    },
+    [isDsh, machine.basicAuth],
+  );
 
   const handleBridgeMessage = useCallback(
     (event: WebViewMessageEvent) => {
@@ -315,6 +351,7 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         // File downloads inside the console are handled by the webview's own
         // system-DownloadManager path; they land in 下载管理 (uid query).
         downloadingMessage="已开始下载，可在 设置 → 下载管理 查看"
+        onHttpError={handleHttpError}
         onNavigationStateChange={(nav: WebViewNavigation) => {
           canGoBackRef.current = nav.canGoBack;
           const url = typeof nav.url === 'string' ? nav.url : '';
@@ -379,11 +416,15 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
         // the page instead of leaving a dead surface.
         onRenderProcessGone={() => reload()}
         onMessage={handleBridgeMessage}
-        renderError={() => (
+        renderError={(domain: string, code: string, desc: string) => (
           <View style={styles.errorBox}>
             <Text style={font.dim}>控制台加载失败，多半是网络未就绪或连接中断</Text>
             <Text style={font.faint}>回到前台会自动重试，也可以现在手动重试</Text>
-            {isDsh && machine.basicAuth == null ? (
+            {isDsh && machine.basicAuth != null &&
+            (desc.includes('ERR_TOO_MANY_RETRIES') ||
+              desc.includes('ERR_INVALID_AUTH_CREDENTIALS')) ? (
+              <Text style={font.faint}>访问口令可能不对：长按列表卡片可修改</Text>
+            ) : isDsh && machine.basicAuth == null ? (
               <Text style={font.faint}>
                 若该地址有 HTTP Basic 访问保护（401），{'\n'}
                 请返回列表长按卡片填写「访问口令」
@@ -395,6 +436,68 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
           </View>
         )}
       />
+
+      {basicAuthPrompt ? (
+        <View style={styles.authOverlay}>
+          <View style={styles.basicAuthCard}>
+            <Text style={font.body}>需要访问口令</Text>
+            <Text style={[font.faint, {marginTop: 6}]}>
+              {authHostOf(url)} 要求 HTTP Basic 认证（多为反向代理保护）。
+              {'\n'}口令加密存储在本机，仅用于连接该地址。
+            </Text>
+            <TextInput
+              style={styles.basicAuthInput}
+              value={basicUser}
+              onChangeText={setBasicUser}
+              placeholder="用户名"
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={styles.basicAuthInput}
+              value={basicPass}
+              onChangeText={setBasicPass}
+              placeholder={
+                machine.basicAuth != null ? '密码（留空沿用已保存）' : '密码'
+              }
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.basicAuthRow}>
+              <TouchableOpacity
+                style={styles.basicAuthButton}
+                onPress={() => setBasicAuthPrompt(false)}>
+                <Text style={styles.basicAuthButtonText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.basicAuthButton,
+                  {backgroundColor: colors.accent},
+                ]}
+                disabled={basicUser.trim().length === 0}
+                onPress={() => {
+                  const user = basicUser.trim();
+                  if (user.length === 0) {
+                    return;
+                  }
+                  const pass =
+                    basicPass.length > 0
+                      ? basicPass
+                      : (machine.basicAuth?.password ?? '');
+                  setBasicAuthPrompt(false);
+                  onSetBasicAuth?.(user, pass);
+                }}>
+                <Text style={{color: '#fff', fontSize: 14, fontWeight: '600'}}>
+                  保存并重连
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : null}
 
       {authWindowUrl != null && (
         <View style={styles.authOverlay}>
@@ -479,4 +582,29 @@ const styles = StyleSheet.create({
   authTitle: {...font.body, flex: 1, textAlign: 'center'},
   authClose: {paddingHorizontal: 12, paddingVertical: 8},
   authCloseText: {color: colors.accent, fontSize: 14},
+  basicAuthCard: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: 18,
+    gap: 10,
+    marginHorizontal: 24,
+  },
+  basicAuthInput: {
+    backgroundColor: colors.bgInput,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 14,
+  },
+  basicAuthRow: {flexDirection: 'row', gap: 10, justifyContent: 'flex-end'},
+  basicAuthButton: {
+    backgroundColor: colors.bgInput,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  basicAuthButtonText: {color: colors.textDim, fontSize: 14},
 });

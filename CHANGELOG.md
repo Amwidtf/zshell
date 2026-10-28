@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 记录格式，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。Alpha 阶段 API 与存储格式可能调整。
 
+## [0.1.0-beta.12] - 2026-10-28
+
+### 修复
+- **DSH 地址带 HTTP Basic 保护时打开控制台黑屏**：WebView 对未应答的
+  认证质询在部分机型上会无限挂起——页面漆黑、无错误页、无任何提示。
+  现在未配置凭据时认证质询会被立刻取消并以错误页呈现原因，且控制台
+  内直接弹出「需要访问口令」输入层（填完保存自动重连），无需再去
+  列表管理面板寻找入口（webview 补丁同步扩展）
+- DSH 错误页提示细分：未配置口令提示「需要填写」，口令已存但认证被拒
+  （ERR_TOO_MANY_RETRIES / ERR_INVALID_AUTH_CREDENTIALS）提示「口令
+  可能不对」
+
 ## [0.1.0-beta.11] - 2026-10-28
 
 ### 新增

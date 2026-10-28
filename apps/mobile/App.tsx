@@ -307,6 +307,11 @@ function App(): React.JSX.Element {
               persist();
             }
           }}
+          onSetBasicAuth={(username, password) => {
+            if (registryRef.current?.setBasicAuth(base.machineId, username, password)) {
+              persist();
+            }
+          }}
         />
       ) : (
         <MachineListScreen

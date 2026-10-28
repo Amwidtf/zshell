@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
-index 0287e1c..67e8f3c 100644
+index 0287e1c..0993c42 100644
 --- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
 +++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
 @@ -44,11 +44,18 @@ public class RNCWebViewClient extends WebViewClient {
@@ -21,7 +21,17 @@ index 0287e1c..67e8f3c 100644
      @Override
      public void onPageFinished(WebView webView, String url) {
          super.onPageFinished(webView, url);
-@@ -157,6 +164,12 @@ public class RNCWebViewClient extends WebViewClient {
+@@ -152,11 +159,21 @@ public class RNCWebViewClient extends WebViewClient {
+             handler.proceed(basicAuthCredential.username, basicAuthCredential.password);
+             return;
+         }
+-        super.onReceivedHttpAuthRequest(view, handler, host, realm);
++        // zshell patch: upstream calls super(), which leaves the challenge
++        // unanswered — on some WebView builds the load then hangs forever
++        // (console renders black with no error). Cancel instead so the
++        // failure surfaces as a load error the app can act on.
++        handler.cancel();
+     }
  
      @Override
      public void onReceivedSslError(final WebView webView, final SslErrorHandler handler, final SslError error) {
