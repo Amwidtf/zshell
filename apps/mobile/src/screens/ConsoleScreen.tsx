@@ -91,7 +91,18 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
   // True while the WebView's own load has failed (error page visible).
   const [loadFailed, setLoadFailed] = useState(false);
   const prefsRef = useRef(loadPrefs());
-  const url = useMemo(() => buildConsoleUrl(machine.credentials), [machine]);
+  const url = useMemo(() => buildConsoleUrl(machine.credentials), [machine.credentials]);
+  // The WebView source must stay referentially stable: with keep-alive the
+  // console stays mounted while App re-renders (registry copies make the
+  // machine prop a fresh object each time), and a new source object would
+  // reload the page. Intentional reloads go through key={reloadKey}.
+  const webSource = useMemo(() => ({uri: url}), [url]);
+  // Notification ids must not collide across simultaneously-alive console
+  // sessions: offset by a stable hash of the machine id.
+  const notifyIdBase = useMemo(
+    () => (machine.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 400) * 10,
+    [machine.id],
+  );
 
   useEffect(() => {
     prefsRef.current = loadPrefs();
@@ -192,16 +203,16 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
       }
       logDiag(bridgeEvent.type, diagDetail(bridgeEvent));
       if (bridgeEvent.type === 'approval-waiting') {
-        notify(2, 'approval', `${brand} · 等待你的批准`, 'Agent 请求执行操作，点开应用处理');
+        notify(notifyIdBase + 2, 'approval', `${brand} · 等待你的批准`, 'Agent 请求执行操作，点开应用处理');
         return;
       }
       setStatus(prev => {
         const next = deriveConsoleStatus(prev, bridgeEvent);
         if (next !== prev) {
           if (next === 'kicked') {
-            notify(3, 'security', '会话已在其他设备连接', '如需夺回请点开应用重连');
+            notify(notifyIdBase + 3, 'security', '会话已在其他设备连接', '如需夺回请点开应用重连');
           } else if (next === 'disconnected' && prev === 'connected') {
-            notify(4, 'info', '连接已断开', '正在自动重连，可点开应用查看');
+            notify(notifyIdBase + 4, 'info', '连接已断开', '正在自动重连，可点开应用查看');
           }
         }
         return next;
@@ -323,7 +334,7 @@ export function ConsoleScreen({machine, onBack, registerBackHandler, onOpenDownl
       <WebView
         key={reloadKey}
         ref={webviewRef}
-        source={{uri: url}}
+        source={webSource}
         injectedJavaScriptBeforeContentLoaded={buildPatchSource()}
         javaScriptEnabled
         domStorageEnabled

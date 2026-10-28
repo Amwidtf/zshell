@@ -185,12 +185,48 @@ export const ABORT_SIGNAL_PATCH_SOURCE = String.raw`(function () {
  * Full document-start payload for the WebView host.
  * Each entry is self-guarding; combine defensively.
  */
+/**
+ * Patch P-4: polyfill Promise.withResolvers for older WebView runtimes.
+ *
+ * Observed: the DSH web console's session controller ("control stream") and
+ * several dependent modules (model settings, onboarding slots) build their
+ * first promise with Promise.withResolvers(), which shipped in Chrome 119.
+ * Emulators, containers and unupdated OEM system WebViews often carry an
+ * older frozen engine (observed: Chrome 110 on MuMu/Android 15), where the
+ * call throws synchronously — the workspace picker stays empty and
+ * conversations never open even though every RPC on the wire succeeds.
+ *
+ * Patch: standard-semantics polyfill (per the TC39 proposal). Probes
+ * (self-retiring):
+ *  - Promise.withResolvers already present (native or prior polyfill) -> no-op;
+ *  - any thrown error -> patch aborts silently (never break the page).
+ */
+export const PROMISE_WITHRESOLVERS_PATCH_SOURCE = String.raw`(function () {
+  'use strict';
+  var FLAG = '__zshellPromiseWithResolvers';
+  try {
+    if (typeof window === 'undefined' || typeof Promise === 'undefined') { return; }
+    if (typeof Promise.withResolvers === 'function' || window[FLAG]) { return; }
+    Promise.withResolvers = function () {
+      var out = {};
+      out.promise = new Promise(function (resolve, reject) {
+        out.resolve = resolve;
+        out.reject = reject;
+      });
+      return out;
+    };
+    window[FLAG] = 'promise-withresolvers:v1';
+  } catch (e) { /* patches must never break the page */ }
+})();`;
+
 export function buildPatchSource(): string {
   return (
     MATCHMEDIA_PATCH_SOURCE +
     '\n' +
     WS_OBSERVER_PATCH_SOURCE +
     '\n' +
-    ABORT_SIGNAL_PATCH_SOURCE
+    ABORT_SIGNAL_PATCH_SOURCE +
+    '\n' +
+    PROMISE_WITHRESOLVERS_PATCH_SOURCE
   );
 }

@@ -3,7 +3,7 @@
  * @format
  */
 
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AppState, BackHandler, StyleSheet, StatusBar, View} from 'react-native';
 import {
   disabledConfig,
@@ -54,6 +54,35 @@ function App(): React.JSX.Element {
   const registerConsoleBack = useCallback((fn: (() => boolean) | null) => {
     webBackRef.current = fn;
   }, []);
+  // Console keep-alive: consoles stay mounted per machine (LRU, capped) while
+  // the user moves around the app; only process death, machine deletion or a
+  // web-login sign-out tears a session down. Back-from-console hides it;
+  // re-entering shows the same live WebView — no reload, no re-handshake.
+  const MAX_CONSOLE_SESSIONS = 3;
+  const [consoleSessions, setConsoleSessions] = useState<string[]>([]);
+  const removeConsoleSession = useCallback(
+    (id: string) => setConsoleSessions(ss => ss.filter(s => s !== id)),
+    [],
+  );
+  const clearConsoleSessions = useCallback(() => setConsoleSessions([]), []);
+  // Hidden consoles must not touch the shared back-handler slot.
+  const noopRegister = useCallback((_fn: (() => boolean) | null) => {}, []);
+  // Records handed to the mounted consoles. Memoized so registry.get's
+  // per-call copy does not churn props (and the WebView source) on every
+  // unrelated re-render; refreshes only when the registry itself changes.
+  const sessionRecords = useMemo(() => {
+    const out: Record<string, MachineRecord> = {};
+    const registry = registryRef.current;
+    if (registry != null) {
+      for (const id of consoleSessions) {
+        const m = registry.get(id);
+        if (m != null) {
+          out[id] = m;
+        }
+      }
+    }
+    return out;
+  }, [consoleSessions, machines]);
 
   useEffect(() => {
     registryRef.current = loadRegistry();
@@ -139,6 +168,8 @@ function App(): React.JSX.Element {
   // 清空 WebView 登录数据并把每台 Kimi 机器的观测状态置为未登录。
   // 必须声明在下面的早退 return 之前（hook 不得条件执行）。
   const signOutWebLogin = useCallback(() => {
+    // 登录数据即将清空，在线控制台全部失效——卸载会话避免僵尸页面
+    clearConsoleSessions();
     clearWebSession()
       .then(() => {
         const registry = registryRef.current;
@@ -153,7 +184,7 @@ function App(): React.JSX.Element {
         persist();
       })
       .catch(() => {});
-  }, [persist]);
+  }, [persist, clearConsoleSessions]);
 
   const addFromUrl = useCallback(
     (url: string, customName?: string) => {
@@ -175,28 +206,9 @@ function App(): React.JSX.Element {
   }
 
   // CN app-store compliance: agreement + privacy consent must come first.
-  if (!consented) {
-    return (
-      <>
-        <StatusBar barStyle="light-content" backgroundColor="#161616" />
-        <ConsentGate
-          onAgree={() => {
-            saveLegalConsent({version: LEGAL_DOC_VERSION, agreedAt: Date.now()});
-            setConsented(true);
-          }}
-        />
-      </>
-    );
-  }
-
-  if (!unlocked) {
-    return (
-      <>
-        <StatusBar barStyle="light-content" backgroundColor="#161616" />
-        <LockScreen config={lock} onUnlock={() => setUnlocked(true)} />
-      </>
-    );
-  }
+  // Consent gate and the app lock render as opaque OVERLAYS (not early
+  // returns) so the app tree — including keep-alive console sessions —
+  // stays mounted underneath and survives relocking.
 
   const top = stack[stack.length - 1];
   // Downloads pushed from the console renders as an overlay so the WebView
@@ -211,10 +223,20 @@ function App(): React.JSX.Element {
   const connectTo = (machineId: string) => {
     registryRef.current?.touch(machineId);
     persist();
+    // Move-to-end LRU: the activated console becomes the most recent; the
+    // oldest session beyond the cap is evicted (its WebView unmounts = a real
+    // disconnect, same as before keep-alive).
+    setConsoleSessions(ss => {
+      const next = ss.filter(s => s !== machineId);
+      next.push(machineId);
+      return next.length > MAX_CONSOLE_SESSIONS
+        ? next.slice(next.length - MAX_CONSOLE_SESSIONS)
+        : next;
+    });
     setStack([{name: 'list'}, {name: 'console', machineId}]);
   };
 
-  let screen: React.JSX.Element;
+  let screen: React.JSX.Element | null;
   switch (base.name) {
     case 'scan':
       screen = (
@@ -290,30 +312,11 @@ function App(): React.JSX.Element {
       screen = <DiagnosticsScreen onBack={pop} />;
       break;
     case 'console': {
+      // The console itself renders from the keep-alive session layer below;
+      // this case only guards against a stale stack entry whose machine has
+      // vanished (e.g. restored backup) by falling back to the list.
       const machine = registryRef.current?.get(base.machineId) ?? null;
-      screen = machine ? (
-        <ConsoleScreen
-          machine={machine}
-          onBack={pop}
-          registerBackHandler={registerConsoleBack}
-          onOpenDownloads={() => push({name: 'downloads'})}
-          onLoginState={state => {
-            if (registryRef.current?.setLoginState(base.machineId, state)) {
-              persist();
-            }
-          }}
-          onSetTrustSsl={trust => {
-            if (registryRef.current?.setTrustSelfSigned(base.machineId, trust)) {
-              persist();
-            }
-          }}
-          onSetBasicAuth={(username, password) => {
-            if (registryRef.current?.setBasicAuth(base.machineId, username, password)) {
-              persist();
-            }
-          }}
-        />
-      ) : (
+      screen = machine ? null : (
         <MachineListScreen
           machines={machines}
           onConnect={connectTo}
@@ -347,6 +350,7 @@ function App(): React.JSX.Element {
           onDelete={id => {
             registryRef.current?.remove(id);
             persist();
+            removeConsoleSession(id);
           }}
           onSignOutWebLogin={signOutWebLogin}
         />
@@ -388,19 +392,85 @@ function App(): React.JSX.Element {
           onDelete={id => {
             registryRef.current?.remove(id);
             persist();
+            removeConsoleSession(id);
           }}
           onSignOutWebLogin={signOutWebLogin}
         />
       );
   }
 
+  // The console shown on top of the stack — or the one sitting under the
+  // downloads overlay. Only that session's WebView is visible; the others
+  // stay mounted but hidden (display:none keeps the native view alive).
+  const consoleOnTop =
+    top.name === 'console'
+      ? top.machineId
+      : fromConsole && base.name === 'console'
+        ? base.machineId
+        : null;
+
   return (
     <>
       <StatusBar barStyle="light-content" backgroundColor="#161616" />
-      {screen}
-      {fromConsole ? (
-        <View style={styles.overlay}>
-          <DownloadsScreen onBack={pop} />
+      <View style={{flex: 1}}>
+        {consoleSessions.map(id => {
+          const m = sessionRecords[id];
+          if (m == null) {
+            return null;
+          }
+          return (
+            <View
+              key={id}
+              style={[
+                styles.sessionLayer,
+                consoleOnTop === id ? null : styles.sessionHidden,
+              ]}>
+              <ConsoleScreen
+                machine={m}
+                onBack={pop}
+                registerBackHandler={
+                  consoleOnTop === id ? registerConsoleBack : noopRegister
+                }
+                onOpenDownloads={() => push({name: 'downloads'})}
+                onLoginState={state => {
+                  if (registryRef.current?.setLoginState(id, state)) {
+                    persist();
+                  }
+                }}
+                onSetTrustSsl={trust => {
+                  if (registryRef.current?.setTrustSelfSigned(id, trust)) {
+                    persist();
+                  }
+                }}
+                onSetBasicAuth={(username, password) => {
+                  if (registryRef.current?.setBasicAuth(id, username, password)) {
+                    persist();
+                  }
+                }}
+              />
+            </View>
+          );
+        })}
+        {screen}
+        {fromConsole ? (
+          <View style={styles.overlay}>
+            <DownloadsScreen onBack={pop} />
+          </View>
+        ) : null}
+      </View>
+      {!consented ? (
+        <View style={styles.gateOverlay}>
+          <ConsentGate
+            onAgree={() => {
+              saveLegalConsent({version: LEGAL_DOC_VERSION, agreedAt: Date.now()});
+              setConsented(true);
+            }}
+          />
+        </View>
+      ) : null}
+      {!unlocked ? (
+        <View style={styles.gateOverlay}>
+          <LockScreen config={lock} onUnlock={() => setUnlocked(true)} />
         </View>
       ) : null}
     </>
@@ -412,6 +482,18 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#161616',
     elevation: 8,
+  },
+  sessionLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#161616',
+  },
+  sessionHidden: {
+    display: 'none',
+  },
+  gateOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#161616',
+    elevation: 10,
   },
 });
 
