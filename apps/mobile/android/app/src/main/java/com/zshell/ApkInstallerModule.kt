@@ -666,7 +666,8 @@ class ApkInstallerPackage : ReactPackage {
       listOf(
           ApkInstallerModule(reactContext),
           CryptoModule(reactContext),
-          NotificationsModule(reactContext))
+          NotificationsModule(reactContext),
+          PrivacyWindowModule(reactContext))
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext,

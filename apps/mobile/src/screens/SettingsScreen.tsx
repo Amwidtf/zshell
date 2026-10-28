@@ -4,6 +4,7 @@ import {
   Linking,
   Modal,
   NativeModules,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -33,6 +34,7 @@ import {MarkdownText} from '../components/MarkdownText';
 import {SecretInput} from '../components/SecretInput';
 import {OSS_LICENSES, PRIVACY_POLICY, USER_AGREEMENT, LegalDoc} from '../legal';
 import {AppPrefs, loadPrefs, notifications, savePrefs} from '../notifications';
+import {privacyWindow} from '../privacyWindow';
 import {PatternPad} from '../PatternPad';
 import {
   openDownloadedFile,
@@ -120,6 +122,15 @@ export function SettingsScreen({
   const [openApkError, setOpenApkError] = useState<string | null>(null);
   const [notesRelease, setNotesRelease] = useState<ReleaseInfo | null>(null);
   const [prefs, setPrefs] = useState<AppPrefs>(() => loadPrefs());
+
+  // ---------- privacy ----------
+
+  /** Recents-mask toggle, owned by native SharedPreferences (see privacyWindow.ts). */
+  const [recentsMask, setRecentsMask] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    privacyWindow?.getRecentsMaskEnabled().then(setRecentsMask);
+  }, []);
 
   // ---------- backup & restore ----------
 
@@ -612,6 +623,31 @@ export function SettingsScreen({
             {error != null ? <Text style={styles.errorText}>{error}</Text> : null}
           </View>
         ) : null}
+      </View>
+
+      {/* ================= 隐私 ================= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>隐私</Text>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={font.body}>最近任务遮罩</Text>
+            <Text style={font.faint}>
+              {Platform.OS === 'android' && Platform.Version >= 36
+                ? '系统原生支持：预览被遮蔽，不影响应用内截图与录屏'
+                : '此系统不区分预览与截图：开启时应用内将无法截图或录屏；关闭后最近任务预览会显示应用画面'}
+            </Text>
+          </View>
+          <Switch
+            value={recentsMask ?? true}
+            disabled={recentsMask == null || privacyWindow == null}
+            onValueChange={on => {
+              privacyWindow?.setRecentsMaskEnabled(on);
+              setRecentsMask(on);
+            }}
+            trackColor={{true: colors.accent}}
+            thumbColor="#ffffff"
+          />
+        </View>
       </View>
 
       {/* ================= 备份与恢复 ================= */}

@@ -1,5 +1,6 @@
 package com.zshell
 
+import android.content.Context
 import android.os.Bundle
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -9,6 +10,17 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
+
+  companion object {
+    const val PRIVACY_PREFS = "zshell_window_privacy"
+    const val KEY_RECENTS_MASK = "recents_mask"
+
+    /** The recents mask defaults to on; only the settings toggle may disable it. */
+    @JvmStatic
+    fun recentsMaskEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PRIVACY_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_RECENTS_MASK, true)
+  }
 
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
@@ -24,6 +36,31 @@ class MainActivity : ReactActivity() {
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
   /**
+   * Recents/task-switcher privacy vs in-app screenshots. The console mirrors the
+   * user's own machine screens, so the recents preview must not leak it — but the
+   * user must also be able to screenshot their own console. Below Android 16 the
+   * OS routes both captures through the same window flag (FLAG_SECURE), and the
+   * task snapshot is taken when the transition to recents STARTS — before
+   * onPause — so raising the flag "on the way out" is always too late (verified
+   * on Android 15). API 36 separates the two: setRecentsScreenshotEnabled(false)
+   * masks the preview without touching screenshots. On older versions the user
+   * picks the priority in settings: mask on => always-secure window (in-app
+   * screenshots blocked, like banking apps); mask off => screenshots work and
+   * the preview shows content.
+   */
+  fun applyWindowPrivacy() {
+    val mask = recentsMaskEnabled(this)
+    if (android.os.Build.VERSION.SDK_INT >= 36) { // BAKLAVA
+      setRecentsScreenshotEnabled(!mask)
+      window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    } else if (mask) {
+      window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    } else {
+      window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    }
+  }
+
+  /**
    * Some environments force edge-to-edge (Android 15+ with targetSdk 35+,
    * and Android containers like 卓易通 on HarmonyOS), drawing our content
    * under the status/navigation bars and breaking windowSoftInputMode=
@@ -35,13 +72,7 @@ class MainActivity : ReactActivity() {
    */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    // FLAG_SECURE: the console mirrors the user's own machine screens and the
-    // lock holds machine credentials, so keep window contents out of the
-    // recents/task-switcher preview and off screenshots. Trade-off: the user
-    // also cannot screenshot inside the app (standard for banking-style apps).
-    window.setFlags(
-        android.view.WindowManager.LayoutParams.FLAG_SECURE,
-        android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    applyWindowPrivacy()
     val content = findViewById<android.view.View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
       val bars = insets.getInsets(
@@ -54,13 +85,13 @@ class MainActivity : ReactActivity() {
   }
 
   /**
-   * Snapshot defense: the recents/task-switcher preview is captured around
-   * pause time. The JS-thread relock renders asynchronously — far too late
-   * for that snapshot — and some ROMs ignore FLAG_SECURE for previews, so an
-   * unlocked screen could still leak into the card right after unlocking.
-   * Hiding the window synchronously in onPause blanks it no matter what the
-   * ROM does; onResume brings it back (the lock screen has re-rendered by
-   * then when the app-lock is enabled).
+   * Snapshot defense: hiding the window at pause time blanks the recents
+   * preview on ROMs that ignore FLAG_SECURE for previews. It is only an extra
+   * layer — on stock Android 15 the snapshot reads the surface's last retained
+   * frame, so the real protection is FLAG_SECURE being applied for the whole
+   * visible lifetime (see applyWindowPrivacy). The JS-thread relock renders
+   * asynchronously — far too late for that snapshot — which is why this must
+   * happen natively at pause time.
    */
   override fun onPause() {
     super.onPause()
